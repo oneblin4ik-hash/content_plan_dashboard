@@ -5,12 +5,15 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Dashboard from "./pages/Dashboard";
+import Analytics from "./pages/Analytics";
+import Navigation from "./components/Navigation";
 
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Dashboard} />
+      <Route path="/analytics" component={Analytics} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -32,6 +35,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
+          <Navigation />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

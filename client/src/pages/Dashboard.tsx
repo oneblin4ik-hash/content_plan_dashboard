@@ -43,15 +43,15 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-border shadow-sm">
-        <div className="container py-6">
+      <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-border">
+        <div className="container py-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-                Content Plan Dashboard
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">
+                Стратегический план контента
               </h1>
               <p className="text-muted-foreground mt-1">
-                Стратегический план контента для Эдуарда Серболина
+                Для Эдуарда Серболина • Фитнес-тренер
               </p>
             </div>
             <div className="hidden md:block">
@@ -59,7 +59,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
       <main className="container py-8">

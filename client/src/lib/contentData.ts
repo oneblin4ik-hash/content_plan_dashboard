@@ -1,4 +1,17 @@
-export const allContentTopics = [
+export interface ContentTopic {
+  id: number;
+  title: string;
+  reason: string;
+  interest: string;
+  format: string;
+  potential: string;
+  published?: boolean;
+  views?: number;
+  engagementRate?: number;
+  publishedDate?: string;
+}
+
+export const allContentTopics: ContentTopic[] = [
   {
     id: 1,
     title: "Почему твой муж худеет от пива, а ты — нет?",
@@ -241,7 +254,20 @@ export const allContentTopics = [
   }
 ];
 
-export const allReelsScripts = [
+export interface ReelsScript {
+  id: number;
+  title: string;
+  hook: string;
+  body?: string;
+  trigger: string;
+  cta: string;
+  published?: boolean;
+  views?: number;
+  engagementRate?: number;
+  publishedDate?: string;
+}
+
+export const allReelsScripts: ReelsScript[] = [
   {
     id: 1,
     title: "Мужское пузо vs Женский живот",
@@ -404,7 +430,15 @@ export const allReelsScripts = [
   }
 ];
 
-export const allTactics = [
+export interface Tactic {
+  id: number;
+  title: string;
+  description: string;
+  icon: string;
+  details?: string;
+}
+
+export const allTactics: Tactic[] = [
   {
     id: 1,
     title: "Каскадная модель контента",
