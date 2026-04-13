@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { BarChart3, BookOpen } from "lucide-react";
+import { BarChart3, BookOpen, Sparkles } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
@@ -32,6 +32,16 @@ export default function Navigation() {
             >
               <BarChart3 className="w-4 h-4" />
               <span className="hidden sm:inline">Аналитика</span>
+            </Button>
+          </Link>
+
+          <Link href="/generator">
+            <Button
+              variant={location === "/generator" ? "default" : "ghost"}
+              className="flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="hidden sm:inline">Генератор</span>
             </Button>
           </Link>
         </div>

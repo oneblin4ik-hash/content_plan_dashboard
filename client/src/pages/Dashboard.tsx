@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Zap, Target, BookOpen, TrendingUp, Copy, Check } from "lucide-react";
+import { Search, Zap, Target, BookOpen, TrendingUp, Copy, Check, CheckCircle2 } from "lucide-react";
 import { allContentTopics, allReelsScripts, allTactics } from "@/lib/contentData";
 import { useState as useStateClipboard } from "react";
 
@@ -16,11 +16,19 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTab, setSelectedTab] = useState("topics");
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>({});
 
   const handleCopy = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleTogglePublished = (id: number) => {
+    setPublishedTopics(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
   const filteredTopics = contentTopics.filter(topic =>
@@ -95,16 +103,35 @@ export default function Dashboard() {
 
             <div className="grid gap-4">
               {filteredTopics.map((topic) => (
-                <Card key={topic.id} className="card-hover">
+                <Card key={topic.id} className={`card-hover ${publishedTopics[topic.id] ? 'opacity-60' : ''}`}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <CardTitle className="text-lg">{topic.title}</CardTitle>
+                        <CardTitle className={`text-lg ${publishedTopics[topic.id] ? 'line-through text-muted-foreground' : ''}`}>
+                          {topic.title}
+                        </CardTitle>
                         <CardDescription className="mt-2">{topic.reason}</CardDescription>
                       </div>
-                      <Badge className={getPotentialColor(topic.potential)}>
-                        {topic.potential}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleTogglePublished(topic.id)}
+                          className="flex-shrink-0"
+                          title={publishedTopics[topic.id] ? "Отметить как неопубликованное" : "Отметить как опубликованное"}
+                        >
+                          <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                            publishedTopics[topic.id]
+                              ? 'bg-green-500 border-green-500'
+                              : 'border-gray-300 hover:border-green-500'
+                          }`}>
+                            {publishedTopics[topic.id] && (
+                              <CheckCircle2 className="w-4 h-4 text-white" />
+                            )}
+                          </div>
+                        </button>
+                        <Badge className={getPotentialColor(topic.potential)}>
+                          {topic.potential}
+                        </Badge>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>

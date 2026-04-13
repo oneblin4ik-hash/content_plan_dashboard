@@ -6,21 +6,22 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
+import ContentGenerator from "./pages/ContentGenerator";
 import Navigation from "./components/Navigation";
 
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path={"/"} component={Dashboard} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/generator" component={ContentGenerator} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );
 }
-
 // NOTE: About Theme
 // - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
 //   to keep consistent foreground/background color across components
