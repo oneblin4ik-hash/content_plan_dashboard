@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Copy, Check, Zap, Sparkles, Loader2 } from "lucide-react";
+import { Copy, Check, Zap, Sparkles, Loader2, Send } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
 
@@ -24,6 +24,9 @@ export default function ContentGenerator() {
   const generatePostMutation = trpc.content.generatePost.useMutation();
   const generateReelsScriptMutation = trpc.content.generateReelsScript.useMutation();
   const generateFullContentMutation = trpc.content.generateFullContent.useMutation();
+  const sendPostToTelegramMutation = trpc.telegram.sendPost.useMutation();
+  const sendReelsToTelegramMutation = trpc.telegram.sendReelsScript.useMutation();
+  const sendBothToTelegramMutation = trpc.telegram.sendBoth.useMutation();
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -57,10 +60,42 @@ export default function ContentGenerator() {
     });
   };
 
+  const handleSendPostToTelegram = async () => {
+    const post = (generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string);
+    if (!post) return;
+    await sendPostToTelegramMutation.mutateAsync({
+      content: post,
+      title: title || undefined,
+    });
+  };
+
+  const handleSendReelsToTelegram = async () => {
+    const script = (generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string);
+    if (!script) return;
+    await sendReelsToTelegramMutation.mutateAsync({
+      script: script,
+      title: title || undefined,
+    });
+  };
+
+  const handleSendBothToTelegram = async () => {
+    const post = (generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string);
+    const script = (generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string);
+    if (!post || !script) return;
+    await sendBothToTelegramMutation.mutateAsync({
+      post,
+      script,
+      title: title || undefined,
+    });
+  };
+
   const isLoading =
     generatePostMutation.isPending ||
     generateReelsScriptMutation.isPending ||
-    generateFullContentMutation.isPending;
+    generateFullContentMutation.isPending ||
+    sendPostToTelegramMutation.isPending ||
+    sendReelsToTelegramMutation.isPending ||
+    sendBothToTelegramMutation.isPending;
 
   return (
     <div className="min-h-screen bg-background">
@@ -222,6 +257,32 @@ export default function ContentGenerator() {
                       </>
                     )}
                   </Button>
+
+                  {((generateFullContentMutation.data as any)?.post || (generateFullContentMutation.data as any)?.reelsScript) && (
+                    <Button
+                      onClick={handleSendBothToTelegram}
+                      disabled={sendBothToTelegramMutation.isPending}
+                      className="w-full mt-2 bg-blue-500 hover:bg-blue-600"
+                    >
+                      {sendBothToTelegramMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Отправляю...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Отправить всё в TG
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {sendBothToTelegramMutation.data && (
+                    <p className="text-sm text-green-600 text-center mt-2">✅ {sendBothToTelegramMutation.data.message}</p>
+                  )}
+                  {sendBothToTelegramMutation.error && (
+                    <p className="text-sm text-red-600 text-center mt-2">❌ {sendBothToTelegramMutation.error.message}</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -247,26 +308,51 @@ export default function ContentGenerator() {
                       {(generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string) || ""}
                     </Streamdown>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      const text = ((generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string) || "");
-                      handleCopy(text, "post");
-                    }}
-                  >
-                    {copiedId === "post" ? (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        Скопировано!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4 mr-2" />
-                        Скопировать пост
-                      </>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const text = ((generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string) || "");
+                        handleCopy(text, "post");
+                      }}
+                    >
+                      {copiedId === "post" ? (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Скопировано!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Скопировать пост
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      className="w-full bg-blue-500 hover:bg-blue-600"
+                      onClick={handleSendPostToTelegram}
+                      disabled={((!generatePostMutation.data?.post && !generateFullContentMutation.data?.post) || sendPostToTelegramMutation.isPending)}
+                    >
+                      {sendPostToTelegramMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Отправляю...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Отправить в Telegram
+                        </>
+                      )}
+                    </Button>
+                    {sendPostToTelegramMutation.data && (
+                      <p className="text-sm text-green-600 text-center">✅ {sendPostToTelegramMutation.data.message}</p>
                     )}
-                  </Button>
+                    {sendPostToTelegramMutation.error && (
+                      <p className="text-sm text-red-600 text-center">❌ {sendPostToTelegramMutation.error.message}</p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -289,26 +375,51 @@ export default function ContentGenerator() {
                       {(generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string) || ""}
                     </Streamdown>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      const text = ((generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string) || "");
-                      handleCopy(text, "reels");
-                    }}
-                  >
-                    {copiedId === "reels" ? (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        Скопировано!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4 mr-2" />
-                        Скопировать сценарий
-                      </>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const text = ((generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string) || "");
+                        handleCopy(text, "reels");
+                      }}
+                    >
+                      {copiedId === "reels" ? (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Скопировано!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Скопировать сценарий
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      className="w-full bg-blue-500 hover:bg-blue-600"
+                      onClick={handleSendReelsToTelegram}
+                      disabled={((!generateReelsScriptMutation.data?.script && !generateFullContentMutation.data?.reelsScript) || sendReelsToTelegramMutation.isPending)}
+                    >
+                      {sendReelsToTelegramMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Отправляю...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Отправить в Telegram
+                        </>
+                      )}
+                    </Button>
+                    {sendReelsToTelegramMutation.data && (
+                      <p className="text-sm text-green-600 text-center">✅ {sendReelsToTelegramMutation.data.message}</p>
                     )}
-                  </Button>
+                    {sendReelsToTelegramMutation.error && (
+                      <p className="text-sm text-red-600 text-center">❌ {sendReelsToTelegramMutation.error.message}</p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
