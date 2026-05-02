@@ -1,12 +1,14 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { BarChart3, BookOpen, Sparkles } from "lucide-react";
+import { BarChart3, BookOpen, Sparkles, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Navigation() {
   const [location] = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   return (
-    <nav className="sticky top-0 z-40 bg-white border-b border-border shadow-sm">
+    <nav className="sticky top-0 z-40 bg-background border-b border-border shadow-sm">
       <div className="container flex items-center justify-between py-4">
         <Link href="/">
           <span className="font-bold text-xl text-foreground hover:text-primary transition-colors cursor-pointer">
@@ -14,7 +16,7 @@ export default function Navigation() {
           </span>
         </Link>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Link href="/">
             <Button
               variant={location === "/" ? "default" : "ghost"}
@@ -44,6 +46,20 @@ export default function Navigation() {
               <span className="hidden sm:inline">Генератор</span>
             </Button>
           </Link>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="ml-2"
+            title={theme === "light" ? "Тёмная тема" : "Светлая тема"}
+          >
+            {theme === "light" ? (
+              <Moon className="w-4 h-4" />
+            ) : (
+              <Sun className="w-4 h-4" />
+            )}
+          </Button>
         </div>
       </div>
     </nav>
