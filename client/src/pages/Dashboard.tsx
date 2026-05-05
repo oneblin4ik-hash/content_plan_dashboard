@@ -4,9 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Zap, Target, BookOpen, TrendingUp, Copy, Check, CheckCircle2 } from "lucide-react";
+import { Search, Zap, Target, BookOpen, TrendingUp, Copy, Check, CheckCircle2, Download } from "lucide-react";
 import { allContentTopics, allReelsScripts, allTactics } from "@/lib/contentData";
-import { useState as useStateClipboard } from "react";
+import { trpc } from "@/lib/trpc";
 
 const contentTopics = allContentTopics;
 const reelsScripts = allReelsScripts;
@@ -17,6 +17,86 @@ export default function Dashboard() {
   const [selectedTab, setSelectedTab] = useState("topics");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>({});
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportPDFMutation = trpc.export.exportPDF.useMutation();
+  const exportExcelMutation = trpc.export.exportExcel.useMutation();
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const result = await exportPDFMutation.mutateAsync({
+        topics: contentTopics.map(t => ({
+          id: String(t.id),
+          title: t.title,
+          description: t.reason,
+          interest: t.interest,
+          format: t.format,
+          potential: t.potential,
+          published: publishedTopics[t.id] || false,
+          views: t.views,
+          engagement: t.engagementRate,
+        })),
+        reels: reelsScripts.map(r => ({
+          id: String(r.id),
+          title: r.title,
+          script: r.hook + " " + (r.body || "") + " " + r.trigger + " " + r.cta,
+          published: r.published,
+        })),
+        tactics: tactics.map(t => ({
+          id: String(t.id),
+          title: t.title,
+          description: t.description,
+        })),
+      });
+      const link = document.createElement("a");
+      link.href = `data:application/pdf;base64,${result.data}`;
+      link.download = result.filename;
+      link.click();
+    } catch (error) {
+      console.error("Export PDF failed:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const result = await exportExcelMutation.mutateAsync({
+        topics: contentTopics.map(t => ({
+          id: String(t.id),
+          title: t.title,
+          description: t.reason,
+          interest: t.interest,
+          format: t.format,
+          potential: t.potential,
+          published: publishedTopics[t.id] || false,
+          views: t.views,
+          engagement: t.engagementRate,
+        })),
+        reels: reelsScripts.map(r => ({
+          id: String(r.id),
+          title: r.title,
+          script: r.hook + " " + (r.body || "") + " " + r.trigger + " " + r.cta,
+          published: r.published,
+        })),
+        tactics: tactics.map(t => ({
+          id: String(t.id),
+          title: t.title,
+          description: t.description,
+        })),
+      });
+      const link = document.createElement("a");
+      link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data}`;
+      link.download = result.filename;
+      link.click();
+    } catch (error) {
+      console.error("Export Excel failed:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleCopy = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
@@ -89,7 +169,7 @@ export default function Dashboard() {
 
           {/* Topics Tab */}
           <TabsContent value="topics" className="space-y-6">
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-col sm:flex-row">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -99,6 +179,22 @@ export default function Dashboard() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+              <Button
+                onClick={handleExportPDF}
+                disabled={isExporting}
+                className="bg-blue-500 hover:bg-blue-600 flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                PDF
+              </Button>
+              <Button
+                onClick={handleExportExcel}
+                disabled={isExporting}
+                className="bg-green-500 hover:bg-green-600 flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Excel
+              </Button>
             </div>
 
             <div className="grid gap-4">
