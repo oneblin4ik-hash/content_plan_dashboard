@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,10 +20,25 @@ import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localLibrary, type Mode } from "@/lib/syncStorage";
 
 const TONE_OPTIONS = [
-  { v: "expert", label: "Эксперт", desc: "Авторитет, физиология, опыт зала" },
-  { v: "friend", label: "Друг", desc: "Эмпатия, как с подругой за кофе" },
-  { v: "provocative", label: "Провокатор", desc: "Цепляет на эмоциях" },
+  { v: "expert", label: "Эксперт" },
+  { v: "friend", label: "Друг" },
+  { v: "provocative", label: "Провокатор" },
 ] as const;
+
+const RUBRICS = [
+  { v: "general", label: "Общая" },
+  { v: "lifehack", label: "Лайфхак" },
+  { v: "overheard", label: "Подслушано у тренера" },
+] as const;
+type Rubric = (typeof RUBRICS)[number]["v"];
+
+const RUBRIC_PROMPT: Record<Rubric, string> = {
+  general: "",
+  lifehack:
+    " Оформи как полезный лайфхак: 1 конкретный приём, который читатель применит сегодня же.",
+  overheard:
+    ' Подача "подслушано у тренера": сценка от первого лица, прямые реплики клиентов в кавычках, без морали.',
+};
 
 const MODES: { v: Mode; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
   { v: "pack", label: "Полный пакет", icon: Layers, desc: "Пост + Reels + хуки + хештеги" },
@@ -44,8 +59,6 @@ const useTitleFromQuery = (set: (t: string) => void) => {
   }, [location]);
 };
 
-/* persistence handled by syncStorage / sync.library tRPC */
-
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState<Mode>("pack");
@@ -55,12 +68,7 @@ export default function ContentGenerator() {
   const [duration, setDuration] = useState<"15-30s" | "30-60s">("15-30s");
   const [slides, setSlides] = useState(7);
   const [hookCount, setHookCount] = useState(7);
-  const [selectedTab, setSelectedTab] = useState("post");
-  const [tone, setTone] = useState("expert");
-  const [duration, setDuration] = useState("15-30s");
-  const [rubric, setRubric] = useState("general");
-  const [includePost, setIncludePost] = useState(true);
-  const [includeReels, setIncludeReels] = useState(true);
+  const [rubric, setRubric] = useState<Rubric>("general");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [voiceText, setVoiceText] = useState("");
 
@@ -90,17 +98,21 @@ export default function ContentGenerator() {
     hashtags.isPending ||
     carousel.isPending;
 
+  const enrichedTitle = title + RUBRIC_PROMPT[rubric];
+
   const handleGenerate = async () => {
     if (!title.trim() || title.trim().length < 5) return;
-    if (mode === "pack") await pack.mutateAsync({ title, platform });
+    if (mode === "pack") await pack.mutateAsync({ title: enrichedTitle, platform });
     else if (mode === "post")
-      await post.mutateAsync({ title, tone, platform, length });
+      await post.mutateAsync({ title: enrichedTitle, tone, platform, length });
     else if (mode === "reels")
-      await reels.mutateAsync({ title, duration });
+      await reels.mutateAsync({ title: enrichedTitle, duration });
     else if (mode === "hooks")
-      await hooks.mutateAsync({ title, count: hookCount });
-    else if (mode === "hashtags") await hashtags.mutateAsync({ title, platform });
-    else if (mode === "carousel") await carousel.mutateAsync({ title, slides });
+      await hooks.mutateAsync({ title: enrichedTitle, count: hookCount });
+    else if (mode === "hashtags")
+      await hashtags.mutateAsync({ title: enrichedTitle, platform });
+    else if (mode === "carousel")
+      await carousel.mutateAsync({ title: enrichedTitle, slides });
   };
 
   const handleCopy = (text: string, id: string) => {
@@ -125,11 +137,13 @@ export default function ContentGenerator() {
           workspaceKey,
           title,
           mode,
-          platform: mode === "post" || mode === "pack" || mode === "hashtags" ? platform : undefined,
+          platform:
+            mode === "post" || mode === "pack" || mode === "hashtags"
+              ? platform
+              : undefined,
           payload,
         });
       } catch {
-        // Fallback to local on cloud failure.
         localLibrary.add({
           id: crypto.randomUUID(),
           createdAt: Date.now(),
@@ -160,8 +174,7 @@ export default function ContentGenerator() {
           </div>
           <h1>
             Один пакет —{" "}
-            <span style={{ color: "var(--brand-gold)" }}>весь контент</span>{" "}
-            вокруг темы.
+            <span style={{ color: "var(--brand-gold)" }}>весь контент</span> вокруг темы.
           </h1>
           <p
             className="text-platinum"
@@ -174,14 +187,11 @@ export default function ContentGenerator() {
         </div>
       </section>
 
-      {/* MODE PICKER */}
       <section style={{ padding: "24px 0" }}>
         <div className="container">
           <div
             className="grid gap-2"
-            style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            }}
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
           >
             {MODES.map((m) => {
               const active = mode === m.v;
@@ -215,13 +225,7 @@ export default function ContentGenerator() {
                   >
                     {m.label}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      marginTop: 4,
-                      opacity: 0.8,
-                    }}
-                  >
+                  <div style={{ fontSize: 12, marginTop: 4, opacity: 0.8 }}>
                     {m.desc}
                   </div>
                 </button>
@@ -231,7 +235,6 @@ export default function ContentGenerator() {
         </div>
       </section>
 
-      {/* INPUT */}
       <section style={{ padding: "16px 0 32px" }}>
         <div className="container">
           <div className="bento-card" style={{ padding: 28 }}>
@@ -253,9 +256,14 @@ export default function ContentGenerator() {
               }}
             />
 
-            {/* MODE-specific controls */}
             <div className="grid gap-3 md:grid-cols-3" style={{ marginTop: 20 }}>
-              {(mode === "post" || mode === "pack") && (
+              <Selector
+                label="Рубрика"
+                value={rubric}
+                options={RUBRICS.map((r) => ({ v: r.v, label: r.label }))}
+                onChange={(v) => setRubric(v as Rubric)}
+              />
+              {(mode === "post" || mode === "pack" || mode === "hashtags") && (
                 <Selector
                   label="Платформа"
                   value={platform}
@@ -324,17 +332,6 @@ export default function ContentGenerator() {
                   onChange={(v) => setSlides(Number(v))}
                 />
               )}
-              {mode === "hashtags" && (
-                <Selector
-                  label="Платформа"
-                  value={platform}
-                  options={[
-                    { v: "instagram", label: "Instagram" },
-                    { v: "telegram", label: "Telegram" },
-                  ]}
-                  onChange={(v) => setPlatform(v as typeof platform)}
-                />
-              )}
             </div>
 
             <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -368,7 +365,11 @@ export default function ContentGenerator() {
                 }
               >
                 <Save className="w-4 h-4" />
-                {copiedId === "saved" ? "Сохранено" : "В библиотеку"}
+                {copiedId === "saved"
+                  ? cloudEnabled
+                    ? "В облаке"
+                    : "Сохранено"
+                  : "В библиотеку"}
               </button>
             </div>
 
@@ -395,7 +396,6 @@ export default function ContentGenerator() {
         </div>
       </section>
 
-      {/* RESULTS */}
       <section style={{ padding: "16px 0 64px" }}>
         <div className="container grid gap-4">
           {mode === "pack" && pack.data && (
@@ -477,7 +477,11 @@ export default function ContentGenerator() {
                         cursor: "pointer",
                       }}
                     >
-                      {copiedId === `hook-${i}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      {copiedId === `hook-${i}` ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 ))}
@@ -510,7 +514,9 @@ export default function ContentGenerator() {
                 ))}
               </div>
               <button
-                onClick={() => handleCopy(hashtags.data!.hashtags.join(" "), "all-tags")}
+                onClick={() =>
+                  handleCopy(hashtags.data!.hashtags.join(" "), "all-tags")
+                }
                 className="btn-gold"
                 style={{
                   background: "var(--ink-2)",
@@ -518,7 +524,11 @@ export default function ContentGenerator() {
                   marginTop: 20,
                 }}
               >
-                {copiedId === "all-tags" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedId === "all-tags" ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
                 Скопировать все
               </button>
             </div>
@@ -535,14 +545,19 @@ export default function ContentGenerator() {
         </div>
       </section>
 
-      {/* BRAND-VOICE VALIDATOR */}
-      <section style={{ padding: "32px 0 96px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <section
+        style={{
+          padding: "32px 0 96px",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
         <div className="container">
           <div className="eyebrow" style={{ marginBottom: 14 }}>
             Brand-voice checker
           </div>
           <h2 style={{ marginBottom: 12, fontSize: 36 }}>
-            Проверь свой текст. <span style={{ color: "var(--brand-gold)" }}>Звучит как Эдуард?</span>
+            Проверь свой текст.{" "}
+            <span style={{ color: "var(--brand-gold)" }}>Звучит как Эдуард?</span>
           </h2>
           <p
             className="text-platinum"
@@ -578,7 +593,10 @@ export default function ContentGenerator() {
               )}
               {validate.data && (
                 <>
-                  <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+                  <div
+                    className="flex items-center justify-between"
+                    style={{ marginBottom: 18 }}
+                  >
                     <div
                       style={{
                         fontFamily: "var(--font-display)",
@@ -595,76 +613,15 @@ export default function ContentGenerator() {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div className="eyebrow">Оценка</div>
-                      <div style={{ fontSize: 13, marginTop: 6, color: "var(--brand-platinum)" }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          marginTop: 6,
+                          color: "var(--brand-platinum)",
+                        }}
+                      >
                         {validate.data.wordCount} слов
                       </div>
-                      {copiedId === "post" ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          Скопировано!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Скопировать пост
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        const postTitle = title;
-                        const newTopic = {
-                          id: Math.max(...allContentTopics.map((t: any) => t.id), 0) + 1,
-                          title: postTitle,
-                          reason: `Рубрика: ${rubric === "lifeHack" ? 'Лайфхак' : rubric === "overheardFromTrainer" ? 'Подслушано у тренера' : 'Общая'}`,
-                          interest: "Высокий",
-                          format: "Пост",
-                          potential: "Высокий",
-                        };
-                        allContentTopics.push(newTopic);
-                        alert(`Тема "${postTitle}" сохранена в План!`);
-                      }}
-                    >
-                      💾 Сохранить в План
-                    </Button>
-                    <Button
-                      className="w-full bg-blue-500 hover:bg-blue-600"
-                      onClick={handleSendPostToTelegram}
-                      disabled={((!generatePostMutation.data?.post && !generateFullContentMutation.data?.post) || sendPostToTelegramMutation.isPending)}
-                    >
-                      {sendPostToTelegramMutation.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Отправляю...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 mr-2" />
-                          Отправить в Telegram
-                        </>
-                      )}
-                    </Button>
-                    {sendPostToTelegramMutation.data && (
-                      <p className="text-sm text-green-600 text-center">✅ {sendPostToTelegramMutation.data.message}</p>
-                    )}
-                    {sendPostToTelegramMutation.error && (
-                      <p className="text-sm text-red-600 text-center">❌ {sendPostToTelegramMutation.error.message}</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Reels Script Result */}
-            {(generateReelsScriptMutation.data || (generateFullContentMutation.data as any)?.reelsScript) && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Сценарий Reels</CardTitle>
-                      <CardDescription>Для Instagram</CardDescription>
                     </div>
                   </div>
                   {validate.data.passed ? (
@@ -723,7 +680,10 @@ export default function ContentGenerator() {
                           borderRadius: 12,
                           background: "var(--ink-3)",
                           fontSize: 13,
-                          color: iss.severity === "error" ? "#ffb3b3" : "var(--brand-platinum)",
+                          color:
+                            iss.severity === "error"
+                              ? "#ffb3b3"
+                              : "var(--brand-platinum)",
                           display: "flex",
                           gap: 10,
                           alignItems: "flex-start",
@@ -738,7 +698,9 @@ export default function ContentGenerator() {
                                 ? "rgba(226,85,85,0.25)"
                                 : "rgba(212,168,67,0.18)",
                             color:
-                              iss.severity === "error" ? "#ffb3b3" : "var(--brand-gold)",
+                              iss.severity === "error"
+                                ? "#ffb3b3"
+                                : "var(--brand-gold)",
                             fontSize: 10,
                             fontWeight: 700,
                             letterSpacing: 1,
@@ -834,13 +796,21 @@ function ResultCard({
 }) {
   return (
     <div className="bento-card" style={{ padding: 28 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+      <div
+        className="flex items-center justify-between"
+        style={{ marginBottom: 16 }}
+      >
         <div className="eyebrow">{title}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => onCopy(text, copyId)}
             className="btn-gold"
-            style={{ background: "var(--ink-2)", color: "#fff", padding: "8px 14px", fontSize: 13 }}
+            style={{
+              background: "var(--ink-2)",
+              color: "#fff",
+              padding: "8px 14px",
+              fontSize: 13,
+            }}
           >
             {copiedId === copyId ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             {copiedId === copyId ? "Скопировано" : "Скопировать"}
