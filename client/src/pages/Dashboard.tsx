@@ -1,10 +1,18 @@
-import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Search, Zap, Target, BookOpen, TrendingUp, Copy, Check, CheckCircle2, Download } from "lucide-react";
+import {
+  Search,
+  Sparkles,
+  CheckCircle2,
+  Download,
+  Trophy,
+  Zap,
+  BookOpen,
+  ArrowUpRight,
+  Copy,
+  Check,
+} from "lucide-react";
 import { allContentTopics, allReelsScripts, allTactics } from "@/lib/contentData";
 import { trpc } from "@/lib/trpc";
 
@@ -12,49 +20,69 @@ const contentTopics = allContentTopics;
 const reelsScripts = allReelsScripts;
 const tactics = allTactics;
 
+const potentialColor = (p: string) => {
+  if (p === "Вирусный") return "var(--brand-gold)";
+  if (p === "Высокий") return "var(--gold-light)";
+  if (p === "Средний") return "var(--brand-platinum)";
+  return "var(--muted-foreground)";
+};
+
 export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTab, setSelectedTab] = useState("topics");
+  const [tab, setTab] = useState<"topics" | "reels" | "tactics">("topics");
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>({});
+  const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>(
+    {}
+  );
   const [isExporting, setIsExporting] = useState(false);
 
-  const exportPDFMutation = trpc.export.exportPDF.useMutation();
-  const exportExcelMutation = trpc.export.exportExcel.useMutation();
+  const exportPDF = trpc.export.exportPDF.useMutation();
+  const exportExcel = trpc.export.exportExcel.useMutation();
+
+  const filtered = useMemo(
+    () =>
+      contentTopics.filter((t) =>
+        t.title.toLowerCase().includes(searchTerm.toLowerCase())
+      ),
+    [searchTerm]
+  );
+
+  const publishedCount = Object.values(publishedTopics).filter(Boolean).length;
+  const viralCount = contentTopics.filter((t) => t.potential === "Вирусный").length;
+
+  const buildExportPayload = () => ({
+    topics: contentTopics.map((t) => ({
+      id: String(t.id),
+      title: t.title,
+      description: t.reason,
+      interest: t.interest,
+      format: t.format,
+      potential: t.potential,
+      published: publishedTopics[t.id] || false,
+      views: t.views,
+      engagement: t.engagementRate,
+    })),
+    reels: reelsScripts.map((r) => ({
+      id: String(r.id),
+      title: r.title,
+      script: `${r.hook} ${r.body || ""} ${r.trigger} ${r.cta}`,
+      published: r.published,
+    })),
+    tactics: tactics.map((t) => ({
+      id: String(t.id),
+      title: t.title,
+      description: t.description,
+    })),
+  });
 
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      const result = await exportPDFMutation.mutateAsync({
-        topics: contentTopics.map(t => ({
-          id: String(t.id),
-          title: t.title,
-          description: t.reason,
-          interest: t.interest,
-          format: t.format,
-          potential: t.potential,
-          published: publishedTopics[t.id] || false,
-          views: t.views,
-          engagement: t.engagementRate,
-        })),
-        reels: reelsScripts.map(r => ({
-          id: String(r.id),
-          title: r.title,
-          script: r.hook + " " + (r.body || "") + " " + r.trigger + " " + r.cta,
-          published: r.published,
-        })),
-        tactics: tactics.map(t => ({
-          id: String(t.id),
-          title: t.title,
-          description: t.description,
-        })),
-      });
-      const link = document.createElement("a");
-      link.href = `data:application/pdf;base64,${result.data}`;
-      link.download = result.filename;
-      link.click();
-    } catch (error) {
-      console.error("Export PDF failed:", error);
+      const r = await exportPDF.mutateAsync(buildExportPayload());
+      const a = document.createElement("a");
+      a.href = `data:application/pdf;base64,${r.data}`;
+      a.download = r.filename;
+      a.click();
     } finally {
       setIsExporting(false);
     }
@@ -63,40 +91,18 @@ export default function Dashboard() {
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      const result = await exportExcelMutation.mutateAsync({
-        topics: contentTopics.map(t => ({
-          id: String(t.id),
-          title: t.title,
-          description: t.reason,
-          interest: t.interest,
-          format: t.format,
-          potential: t.potential,
-          published: publishedTopics[t.id] || false,
-          views: t.views,
-          engagement: t.engagementRate,
-        })),
-        reels: reelsScripts.map(r => ({
-          id: String(r.id),
-          title: r.title,
-          script: r.hook + " " + (r.body || "") + " " + r.trigger + " " + r.cta,
-          published: r.published,
-        })),
-        tactics: tactics.map(t => ({
-          id: String(t.id),
-          title: t.title,
-          description: t.description,
-        })),
-      });
-      const link = document.createElement("a");
-      link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data}`;
-      link.download = result.filename;
-      link.click();
-    } catch (error) {
-      console.error("Export Excel failed:", error);
+      const r = await exportExcel.mutateAsync(buildExportPayload());
+      const a = document.createElement("a");
+      a.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${r.data}`;
+      a.download = r.filename;
+      a.click();
     } finally {
       setIsExporting(false);
     }
   };
+
+  const togglePublished = (id: number) =>
+    setPublishedTopics((p) => ({ ...p, [id]: !p[id] }));
 
   const handleCopy = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
@@ -104,248 +110,490 @@ export default function Dashboard() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleTogglePublished = (id: number) => {
-    setPublishedTopics(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  const filteredTopics = contentTopics.filter(topic =>
-    topic.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const getPotentialColor = (potential: string) => {
-    switch (potential) {
-      case "Вирусный":
-        return "bg-red-100 text-red-800";
-      case "Высокий":
-        return "bg-orange-100 text-orange-800";
-      case "Средний":
-        return "bg-yellow-100 text-yellow-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-border">
-        <div className="container py-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-                Стратегический план контента
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Для Эдуарда Серболина • Фитнес-тренер
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <TrendingUp className="w-12 h-12 text-primary opacity-70" />
-            </div>
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      {/* HERO */}
+      <section style={{ padding: "64px 0 32px" }}>
+        <div className="container">
+          <div className="eyebrow" style={{ marginBottom: 16 }}>
+            Content Studio · Mr. Serbolin
+          </div>
+          <h1>
+            Контент-план,{" "}
+            <span style={{ color: "var(--brand-gold)" }}>заточенный под</span>
+            <br />
+            твою аудиторию.
+          </h1>
+          <p
+            className="text-platinum"
+            style={{ maxWidth: 620, fontSize: 19, marginTop: 24, lineHeight: 1.5 }}
+          >
+            30 тем, 20 reels-сценариев, 7 тактических рекомендаций. Один аккаунт,
+            один тренер, один голос. Без воды, без «вы», без декоративных эмодзи.
+          </p>
+
+          {/* BENTO STATS */}
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "repeat(4, 1fr)",
+              marginTop: 48,
+            }}
+          >
+            <StatTile
+              eyebrow="Темы"
+              value={`${contentTopics.length}`}
+              label="готовых заголовков"
+              icon={<BookOpen className="w-5 h-5" />}
+            />
+            <StatTile
+              eyebrow="Вирусный потенциал"
+              value={`${viralCount}`}
+              label="из коллекции"
+              icon={<Zap className="w-5 h-5" />}
+              accent
+            />
+            <StatTile
+              eyebrow="Опубликовано"
+              value={`${publishedCount}`}
+              label={`из ${contentTopics.length}`}
+              icon={<CheckCircle2 className="w-5 h-5" />}
+            />
+            <StatTile
+              eyebrow="Reels-сценариев"
+              value={`${reelsScripts.length}`}
+              label="готовых к съёмке"
+              icon={<Trophy className="w-5 h-5" />}
+            />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Main Content */}
-      <main className="container py-8">
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="topics" className="flex items-center gap-2">
-              <Target className="w-4 h-4" />
-              <span className="hidden sm:inline">Темы</span>
-            </TabsTrigger>
-            <TabsTrigger value="reels" className="flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              <span className="hidden sm:inline">Reels</span>
-            </TabsTrigger>
-            <TabsTrigger value="tactics" className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Тактики</span>
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Topics Tab */}
-          <TabsContent value="topics" className="space-y-6">
-            <div className="flex gap-3 flex-col sm:flex-row">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Поиск по темам..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <Button
-                onClick={handleExportPDF}
-                disabled={isExporting}
-                className="bg-blue-500 hover:bg-blue-600 flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                PDF
-              </Button>
-              <Button
-                onClick={handleExportExcel}
-                disabled={isExporting}
-                className="bg-green-500 hover:bg-green-600 flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Excel
-              </Button>
-            </div>
-
-            <div className="grid gap-4">
-              {filteredTopics.map((topic) => (
-                <Card key={topic.id} className={`card-hover ${publishedTopics[topic.id] ? 'opacity-60' : ''}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <CardTitle className={`text-lg ${publishedTopics[topic.id] ? 'line-through text-muted-foreground' : ''}`}>
-                          {topic.title}
-                        </CardTitle>
-                        <CardDescription className="mt-2">{topic.reason}</CardDescription>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleTogglePublished(topic.id)}
-                          className="flex-shrink-0"
-                          title={publishedTopics[topic.id] ? "Отметить как неопубликованное" : "Отметить как опубликованное"}
-                        >
-                          <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-                            publishedTopics[topic.id]
-                              ? 'bg-green-500 border-green-500'
-                              : 'border-gray-300 hover:border-green-500'
-                          }`}>
-                            {publishedTopics[topic.id] && (
-                              <CheckCircle2 className="w-4 h-4 text-white" />
-                            )}
-                          </div>
-                        </button>
-                        <Badge className={getPotentialColor(topic.potential)}>
-                          {topic.potential}
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">Интерес:</span>
-                        <Badge variant="outline">{topic.interest}</Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">Формат:</span>
-                        <Badge variant="secondary">{topic.format}</Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+      {/* TABS */}
+      <section style={{ padding: "16px 0 96px" }}>
+        <div className="container">
+          <div
+            className="flex items-center justify-between gap-4 flex-wrap"
+            style={{ marginBottom: 24 }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                gap: 4,
+                padding: 4,
+                background: "var(--ink-2)",
+                borderRadius: 9999,
+              }}
+            >
+              {(
+                [
+                  ["topics", "Темы"],
+                  ["reels", "Reels"],
+                  ["tactics", "Тактики"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setTab(k)}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 9999,
+                    border: 0,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    background: tab === k ? "var(--brand-gold)" : "transparent",
+                    color: tab === k ? "var(--ink)" : "var(--brand-platinum)",
+                    transition: "all .2s",
+                  }}
+                >
+                  {label}
+                </button>
               ))}
             </div>
 
-            <div className="text-center text-sm text-muted-foreground mt-8">
-              Показано {filteredTopics.length} из {contentTopics.length} тем
+            <div className="flex gap-2 items-center">
+              <Link href="/generator">
+                <span className="btn-gold">
+                  <Sparkles className="w-4 h-4" />
+                  Открыть студию
+                </span>
+              </Link>
             </div>
-          </TabsContent>
+          </div>
 
-          {/* Reels Tab */}
-          <TabsContent value="reels" className="space-y-6">
-            <div className="grid gap-4">
-              {reelsScripts.map((script) => (
-                <Card key={script.id} className="card-hover">
-                  <CardHeader>
-                    <CardTitle className="text-lg">{script.title}</CardTitle>
-                  </CardHeader>
-                      <CardContent className="space-y-4">
-                    <div>
-                      <h4 className="font-semibold text-sm text-primary mb-2">Хук:</h4>
-                      <p className="text-sm text-foreground">{script.hook}</p>
-                    </div>
-                    {script.body && (
-                      <div>
-                        <h4 className="font-semibold text-sm text-primary mb-2">Тело:</h4>
-                        <p className="text-sm text-foreground">{script.body}</p>
-                      </div>
-                    )}
-                    <div>
-                      <h4 className="font-semibold text-sm text-primary mb-2">Триггер:</h4>
-                      <p className="text-sm text-foreground">{script.trigger}</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-sm text-primary mb-2">CTA:</h4>
-                      <p className="text-sm text-foreground italic">{script.cta}</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      className="w-full mt-4"
-                      onClick={() => {
-                        const fullScript = `${script.title}\n\nХук: ${script.hook}\n${script.body ? `Тело: ${script.body}\n` : ''}Триггер: ${script.trigger}\n\nCTA: ${script.cta}`;
-                        handleCopy(fullScript, script.id);
+          {tab === "topics" && (
+            <>
+              <div
+                className="flex gap-3 flex-col sm:flex-row"
+                style={{ marginBottom: 24 }}
+              >
+                <div className="relative flex-1">
+                  <Search
+                    className="absolute left-3 top-3 w-4 h-4"
+                    style={{ color: "var(--muted-foreground)" }}
+                  />
+                  <Input
+                    placeholder="Найти тему..."
+                    className="pl-10"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{
+                      background: "var(--ink-2)",
+                      borderColor: "rgba(255,255,255,0.08)",
+                      color: "var(--foreground)",
+                      height: 44,
+                      borderRadius: 9999,
+                    }}
+                  />
+                </div>
+                <button
+                  className="btn-gold"
+                  onClick={handleExportPDF}
+                  disabled={isExporting}
+                  style={{ background: "var(--ink-2)", color: "#fff" }}
+                >
+                  <Download className="w-4 h-4" /> PDF
+                </button>
+                <button
+                  className="btn-gold"
+                  onClick={handleExportExcel}
+                  disabled={isExporting}
+                  style={{ background: "var(--ink-2)", color: "#fff" }}
+                >
+                  <Download className="w-4 h-4" /> Excel
+                </button>
+              </div>
+
+              <div
+                className="grid gap-3"
+                style={{
+                  gridTemplateColumns:
+                    "repeat(auto-fill, minmax(360px, 1fr))",
+                }}
+              >
+                {filtered.map((topic) => {
+                  const published = publishedTopics[topic.id];
+                  return (
+                    <div
+                      key={topic.id}
+                      className="bento-card"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 14,
+                        opacity: published ? 0.55 : 1,
                       }}
                     >
-                      {copiedId === script.id ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          Скопировано!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Скопировать сценарий
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="text-center text-sm text-muted-foreground mt-8">
-              Всего сценариев: {reelsScripts.length} из 20 (показано)
-            </div>
-          </TabsContent>
-
-          {/* Tactics Tab */}
-          <TabsContent value="tactics" className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              {tactics.map((tactic) => (
-                <Card key={tactic.id} className="card-hover">
-                  <CardHeader>
-                    <div className="flex items-start gap-4">
-                      <div className="text-3xl">{tactic.icon}</div>
-                      <div className="flex-1">
-                        <CardTitle className="text-lg">{tactic.title}</CardTitle>
+                      <div
+                        className="flex items-start justify-between gap-3"
+                        style={{ marginBottom: 4 }}
+                      >
+                        <div
+                          className="eyebrow"
+                          style={{ color: potentialColor(topic.potential) }}
+                        >
+                          {topic.potential}
+                        </div>
+                        <button
+                          onClick={() => togglePublished(topic.id)}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: published
+                              ? "2px solid var(--brand-gold)"
+                              : "2px solid rgba(255,255,255,0.2)",
+                            background: published
+                              ? "var(--brand-gold)"
+                              : "transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                          title={published ? "Опубликовано" : "Отметить как опубликованное"}
+                        >
+                          {published && (
+                            <Check className="w-3 h-3" style={{ color: "var(--ink)" }} />
+                          )}
+                        </button>
+                      </div>
+                      <h3
+                        style={{
+                          fontSize: 18,
+                          lineHeight: 1.3,
+                          letterSpacing: "-0.4px",
+                          textDecoration: published ? "line-through" : "none",
+                        }}
+                      >
+                        {topic.title}
+                      </h3>
+                      <p
+                        className="text-platinum"
+                        style={{ fontSize: 14, lineHeight: 1.5 }}
+                      >
+                        {topic.reason}
+                      </p>
+                      <div
+                        className="flex items-center justify-between"
+                        style={{
+                          marginTop: "auto",
+                          paddingTop: 12,
+                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          fontSize: 12,
+                        }}
+                      >
+                        <span style={{ color: "var(--muted-foreground)" }}>
+                          {topic.format}
+                        </span>
+                        <Link href={`/generator?title=${encodeURIComponent(topic.title)}`}>
+                          <span
+                            style={{
+                              color: "var(--brand-gold)",
+                              fontWeight: 600,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            Сгенерировать
+                            <ArrowUpRight className="w-3 h-3" />
+                          </span>
+                        </Link>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-sm text-foreground">{tactic.description}</p>
-                    {tactic.details && (
-                      <div className="text-xs text-muted-foreground bg-secondary/50 p-3 rounded-md">
-                        <p>{tactic.details}</p>
-                      </div>
+                  );
+                })}
+              </div>
+
+              <p
+                className="text-platinum"
+                style={{
+                  textAlign: "center",
+                  fontSize: 13,
+                  marginTop: 32,
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                Показано {filtered.length} из {contentTopics.length} тем
+              </p>
+            </>
+          )}
+
+          {tab === "reels" && (
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))" }}
+            >
+              {reelsScripts.map((script) => (
+                <div key={script.id} className="bento-card" style={{ gap: 14 }}>
+                  <div className="eyebrow">Reels · сценарий #{script.id}</div>
+                  <h3 style={{ fontSize: 20, letterSpacing: "-0.4px" }}>
+                    {script.title}
+                  </h3>
+                  <ReelsBlock label="Хук" text={script.hook} />
+                  {script.body && <ReelsBlock label="Тело" text={script.body} />}
+                  <ReelsBlock label="Триггер" text={script.trigger} />
+                  <ReelsBlock label="CTA" text={script.cta} italic />
+                  <button
+                    onClick={() => {
+                      const full = `${script.title}\n\nХук: ${script.hook}\n${
+                        script.body ? `Тело: ${script.body}\n` : ""
+                      }Триггер: ${script.trigger}\n\nCTA: ${script.cta}`;
+                      handleCopy(full, script.id);
+                    }}
+                    className="btn-gold"
+                    style={{
+                      background: "var(--ink-2)",
+                      color: "#fff",
+                      width: "100%",
+                      justifyContent: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    {copiedId === script.id ? (
+                      <>
+                        <Check className="w-4 h-4" /> Скопировано
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" /> Скопировать сценарий
+                      </>
                     )}
-                  </CardContent>
-                </Card>
+                  </button>
+                </div>
               ))}
             </div>
+          )}
 
-            <div className="text-center text-sm text-muted-foreground mt-8">
-              Всего рекомендаций: {tactics.length} из 7
+          {tab === "tactics" && (
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))" }}
+            >
+              {tactics.map((t) => (
+                <div key={t.id} className="bento-card">
+                  <div
+                    style={{
+                      fontSize: 28,
+                      marginBottom: 12,
+                      color: "var(--brand-gold)",
+                    }}
+                  >
+                    {t.icon}
+                  </div>
+                  <h3 style={{ fontSize: 20, marginBottom: 10 }}>{t.title}</h3>
+                  <p className="text-platinum" style={{ fontSize: 14, lineHeight: 1.5 }}>
+                    {t.description}
+                  </p>
+                  {t.details && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 14,
+                        background: "rgba(212,168,67,0.08)",
+                        fontSize: 12,
+                        color: "var(--brand-platinum)",
+                      }}
+                    >
+                      {t.details}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-          </TabsContent>
-        </Tabs>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-secondary/50 mt-12">
-        <div className="container py-8 text-center text-sm text-muted-foreground">
-          <p>Content Plan Dashboard • Разработано для максимизации ROI вашего контента</p>
+          )}
         </div>
-      </footer>
+      </section>
+
+      {/* SLOGAN STRIP */}
+      <section
+        style={{
+          background: "var(--brand-gold)",
+          color: "var(--ink)",
+          padding: "56px 0",
+        }}
+      >
+        <div
+          className="container flex items-center justify-between gap-6 flex-wrap"
+        >
+          <h2 style={{ color: "var(--ink)", maxWidth: 720, fontSize: 36 }}>
+            Не жди результат — научись получать удовольствие от процесса.
+          </h2>
+          <Link href="/generator">
+            <span
+              style={{
+                background: "var(--ink)",
+                color: "#fff",
+                padding: "16px 28px",
+                borderRadius: 9999,
+                fontFamily: "var(--font-body)",
+                fontSize: 15,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              Запустить студию
+              <ArrowUpRight className="w-4 h-4" />
+            </span>
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StatTile({
+  eyebrow,
+  value,
+  label,
+  icon,
+  accent,
+}: {
+  eyebrow: string;
+  value: string;
+  label: string;
+  icon: React.ReactNode;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className="bento-card"
+      style={{
+        background: accent ? "var(--brand-gold)" : "var(--card)",
+        color: accent ? "var(--ink)" : "var(--card-foreground)",
+        minHeight: 140,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div
+          className="eyebrow"
+          style={{
+            color: accent ? "rgba(34,34,34,0.7)" : "var(--brand-gold)",
+          }}
+        >
+          {eyebrow}
+        </div>
+        <span style={{ opacity: 0.6 }}>{icon}</span>
+      </div>
+      <div>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 44,
+            fontWeight: 700,
+            letterSpacing: "-1.6px",
+            lineHeight: 1,
+          }}
+        >
+          {value}
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            marginTop: 6,
+            opacity: 0.8,
+          }}
+        >
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReelsBlock({
+  label,
+  text,
+  italic,
+}: {
+  label: string;
+  text: string;
+  italic?: boolean;
+}) {
+  return (
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>
+        {label}
+      </div>
+      <p
+        style={{
+          fontSize: 14,
+          lineHeight: 1.5,
+          color: "var(--foreground)",
+          fontStyle: italic ? "italic" : "normal",
+        }}
+      >
+        {text}
+      </p>
     </div>
   );
 }

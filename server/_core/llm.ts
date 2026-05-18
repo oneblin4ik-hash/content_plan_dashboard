@@ -209,16 +209,32 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+type LLMRoute = { url: string; apiKey: string; model: string };
 
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+const resolveRoute = (): LLMRoute => {
+  if (ENV.forgeApiKey) {
+    const base =
+      ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+        ? ENV.forgeApiUrl.replace(/\/$/, "")
+        : "https://forge.manus.im";
+    return {
+      url: `${base}/v1/chat/completions`,
+      apiKey: ENV.forgeApiKey,
+      model: "gemini-2.5-flash",
+    };
   }
+  if (ENV.geminiApiKey) {
+    return {
+      url: `${ENV.geminiApiUrl.replace(/\/$/, "")}/chat/completions`,
+      apiKey: ENV.geminiApiKey,
+      model: "gemini-2.5-flash",
+    };
+  }
+  throw new Error(
+    "LLM is not configured. Set BUILT_IN_FORGE_API_KEY or GEMINI_API_KEY."
+  );
 };
+
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -266,7 +282,7 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  const route = resolveRoute();
 
   const {
     messages,
@@ -280,7 +296,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: route.model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -312,11 +328,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  const response = await fetch(route.url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${route.apiKey}`,
     },
     body: JSON.stringify(payload),
   });

@@ -1,65 +1,86 @@
 import { Link, useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { BarChart3, BookOpen, Sparkles, Moon, Sun } from "lucide-react";
-import { useTheme } from "@/contexts/ThemeContext";
+import { BarChart3, BookOpen, Sparkles, Calendar, Library } from "lucide-react";
+
+const items = [
+  { href: "/", label: "План", icon: BookOpen },
+  { href: "/generator", label: "Студия", icon: Sparkles },
+  { href: "/library", label: "Библиотека", icon: Library },
+  { href: "/calendar", label: "Календарь", icon: Calendar },
+  { href: "/analytics", label: "Аналитика", icon: BarChart3 },
+];
 
 export default function Navigation() {
   const [location] = useLocation();
-  const { theme, toggleTheme } = useTheme();
 
   return (
-    <nav className="sticky top-0 z-40 bg-background border-b border-border shadow-sm">
-      <div className="container flex items-center justify-between py-4">
+    <nav
+      className="frosted sticky top-0 z-40"
+      style={{
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        padding: "12px 0",
+      }}
+    >
+      <div className="container flex items-center gap-6">
         <Link href="/">
-          <span className="font-bold text-xl text-foreground hover:text-primary transition-colors cursor-pointer">
-            Content Plan Dashboard
+          <span
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 20,
+              letterSpacing: "-0.3px",
+              color: "#fff",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Content Studio<span style={{ color: "var(--brand-gold)" }}>.</span>{" "}
+            <span style={{ color: "var(--brand-platinum)", fontWeight: 400 }}>
+              Mr. Serbolin
+            </span>
           </span>
         </Link>
 
-        <div className="flex gap-2 items-center">
-          <Link href="/">
-            <Button
-              variant={location === "/" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">План</span>
-            </Button>
-          </Link>
+        <ul
+          className="flex flex-1 items-center justify-center"
+          style={{ listStyle: "none", gap: 4, margin: 0, padding: 0 }}
+        >
+          {items.map((it) => {
+            const active = location === it.href;
+            const Icon = it.icon;
+            return (
+              <li key={it.href}>
+                <Link href={it.href}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 14px",
+                      borderRadius: 9999,
+                      fontFamily: "var(--font-body)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      letterSpacing: "-0.1px",
+                      color: active ? "var(--brand-gold)" : "var(--brand-platinum)",
+                      background: active ? "rgba(212,168,67,0.12)" : "transparent",
+                      transition: "color .2s, background .2s",
+                    }}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="hidden md:inline">{it.label}</span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
 
-          <Link href="/analytics">
-            <Button
-              variant={location === "/analytics" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Аналитика</span>
-            </Button>
-          </Link>
-
-          <Link href="/generator">
-            <Button
-              variant={location === "/generator" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span className="hidden sm:inline">Генератор</span>
-            </Button>
-          </Link>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className="ml-2"
-            title={theme === "light" ? "Тёмная тема" : "Светлая тема"}
-          >
-            {theme === "light" ? (
-              <Moon className="w-4 h-4" />
-            ) : (
-              <Sun className="w-4 h-4" />
-            )}
-          </Button>
+        <div
+          className="equation hidden lg:block"
+          style={{ fontSize: 12, color: "var(--brand-platinum)" }}
+        >
+          Терпение <span className="op">+</span> Дисциплина{" "}
+          <span className="op">=</span> Результат
         </div>
       </div>
     </nav>

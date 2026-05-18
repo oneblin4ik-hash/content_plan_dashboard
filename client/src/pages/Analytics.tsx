@@ -57,21 +57,22 @@ export default function Analytics() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-border shadow-sm">
-        <div className="container py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-                Трекер Выполнения
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Отслеживание опубликованного контента и статистики просмотров
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <TrendingUp className="w-12 h-12 text-primary opacity-70" />
-            </div>
+      <header style={{ padding: "56px 0 24px" }}>
+        <div className="container">
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Аналитика
           </div>
+          <h1>
+            Что{" "}
+            <span style={{ color: "var(--brand-gold)" }}>работает.</span>
+          </h1>
+          <p
+            className="text-platinum"
+            style={{ maxWidth: 620, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
+          >
+            Просмотры, engagement, прогресс публикаций. Без графиков-обманок —
+            только реальные цифры по контенту.
+          </p>
         </div>
       </header>
 
@@ -122,7 +123,7 @@ export default function Analytics() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-orange-600">
+              <div className="text-3xl font-bold" style={{ color: "var(--brand-gold)" }}>
                 {allContentTopics.length - publishedCount}
               </div>
               <p className="text-xs text-muted-foreground mt-1">ожидают публикации</p>
@@ -204,7 +205,7 @@ export default function Analytics() {
                     <p className="text-sm text-muted-foreground mt-1">{topic.reason}</p>
                     <div className="flex flex-wrap gap-2 mt-2">
                       <Badge variant="outline">{topic.format}</Badge>
-                      <Badge className={topic.potential === "Вирусный" ? "bg-red-100 text-red-800" : "bg-orange-100 text-orange-800"}>
+                      <Badge style={{ background: topic.potential === "Вирусный" ? "var(--brand-gold)" : "var(--gold-soft-fill)", color: topic.potential === "Вирусный" ? "var(--ink)" : "var(--brand-gold)", border: "1px solid var(--gold-medal-edge)" }}>
                         {topic.potential}
                       </Badge>
                     </div>

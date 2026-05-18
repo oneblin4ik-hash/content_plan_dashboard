@@ -1,13 +1,22 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================
+   Serbolin Design System — bridged into Tailwind
+   "Терпение + Дисциплина = Результат"
+   ============================================================ */
+
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-2xl: 36px;
+  --radius-pill: 9999px;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -40,101 +49,143 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-gold: var(--brand-gold);
+  --color-gold-light: var(--gold-light);
+  --color-gold-deep: var(--gold-deep);
+  --color-platinum: var(--brand-platinum);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+
+  --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  --font-editorial: "DM Serif Display", "Iowan Old Style", Georgia,
+    "Times New Roman", serif;
 }
 
 :root {
-  --primary: oklch(0.65 0.25 25);
-  --primary-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.65 0.25 25);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --chart-1: oklch(0.65 0.25 25);
-  --chart-2: oklch(0.55 0.2 30);
-  --chart-3: oklch(0.75 0.15 35);
-  --chart-4: oklch(0.45 0.18 20);
-  --chart-5: oklch(0.35 0.15 15);
-  --radius: 0.75rem;
-  --background: oklch(0.98 0.001 286);
-  --foreground: oklch(0.2 0.01 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.01 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.01 65);
-  --secondary: oklch(0.92 0.01 200);
-  --secondary-foreground: oklch(0.3 0.01 65);
-  --muted: oklch(0.94 0.005 286);
-  --muted-foreground: oklch(0.55 0.01 285);
-  --accent: oklch(0.65 0.25 25);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.65 0.25 25);
-  --sidebar: oklch(0.98 0.001 286);
-  --sidebar-foreground: oklch(0.2 0.01 65);
-  --sidebar-accent: oklch(0.65 0.25 25);
-  --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.65 0.25 25);
+  --brand-black: #222222;
+  --brand-gold: #d4a843;
+  --brand-platinum: #e6e6e6;
+  --brand-white: #ffffff;
+  --gold-light: #e5bd63;
+  --gold-deep: #b68c28;
+  --gold-soft-fill: rgba(212, 168, 67, 0.12);
+  --gold-medal-edge: rgba(212, 168, 67, 0.45);
+
+  --ink: #222222;
+  --ink-2: #2a2a2c;
+  --ink-3: #1a1a1a;
+  --ink-4: #303030;
+
+  /* Default theme = DARK (premium brand canvas) */
+  --background: #1a1a1a;
+  --foreground: #ffffff;
+  --card: #222222;
+  --card-foreground: #ffffff;
+  --popover: #2a2a2c;
+  --popover-foreground: #ffffff;
+  --primary: #d4a843;
+  --primary-foreground: #222222;
+  --secondary: #2a2a2c;
+  --secondary-foreground: #e6e6e6;
+  --muted: #2a2a2c;
+  --muted-foreground: #b5b5b5;
+  --accent: #d4a843;
+  --accent-foreground: #222222;
+  --destructive: #e25555;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #d4a843;
+  --radius: 20px;
+
+  --chart-1: #d4a843;
+  --chart-2: #e5bd63;
+  --chart-3: #b68c28;
+  --chart-4: #e6e6e6;
+  --chart-5: #7a7a7a;
+
+  --sidebar: #1a1a1a;
+  --sidebar-foreground: #e6e6e6;
+  --sidebar-primary: #d4a843;
+  --sidebar-primary-foreground: #222222;
+  --sidebar-accent: #2a2a2c;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #d4a843;
+}
+
+/* Light surface used as alternating tile inside the dark canvas */
+.surface-light {
+  --background: #ffffff;
+  --foreground: #222222;
+  --card: #ffffff;
+  --card-foreground: #222222;
+  --popover: #ffffff;
+  --popover-foreground: #222222;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #4a4a4a;
+  --muted: #f5f5f5;
+  --muted-foreground: #7a7a7a;
+  --border: #e0e0e0;
+  --input: #e0e0e0;
 }
 
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  /* Already the default — keep equivalent values so .dark class is harmless */
+  --background: #1a1a1a;
+  --foreground: #ffffff;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html,
   body {
-    @apply bg-background text-foreground font-sans;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.1px;
   }
-  h1, h2, h3 {
-    @apply font-bold;
-    font-family: 'Merriweather', serif;
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -1.2px;
+    line-height: 1.05;
+    margin: 0;
   }
   h1 {
-    @apply text-4xl md:text-5xl leading-tight;
+    font-size: clamp(40px, 6vw, 72px);
+    letter-spacing: -2px;
+    line-height: 1.02;
   }
   h2 {
-    @apply text-3xl md:text-4xl leading-snug;
+    font-size: clamp(28px, 4vw, 48px);
+    letter-spacing: -1.2px;
+    line-height: 1.1;
   }
   h3 {
-    @apply text-xl md:text-2xl;
+    font-size: clamp(20px, 2.4vw, 28px);
+    letter-spacing: -0.7px;
+    line-height: 1.15;
   }
   p {
-    @apply text-base leading-relaxed;
+    margin: 0;
+    text-wrap: pretty;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -147,66 +198,123 @@
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
+  ::selection {
+    background: var(--brand-gold);
+    color: var(--ink);
+  }
 }
 
 @layer components {
-  /**
-   * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
   .container {
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
-    padding-right: 1rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+    max-width: 1280px;
   }
-
-  .flex {
-    min-height: 0;
-    min-width: 0;
-  }
-
-  .card-hover {
-    @apply transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer;
-  }
-
-  .badge-primary {
-    @apply inline-block px-3 py-1 rounded-full text-sm font-medium bg-primary text-primary-foreground;
-  }
-
-  .section-title {
-    @apply text-2xl md:text-3xl font-bold text-foreground mb-6;
-    font-family: 'Merriweather', serif;
-  }
-
-  @media (min-width: 640px) {
-    .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
-      padding-right: 1.5rem;
-    }
-  }
-
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
     }
   }
 
-  @supports (font-family: 'Poppins') {
-    body {
-      font-family: 'Poppins', sans-serif;
-    }
+  .eyebrow {
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--brand-gold);
+  }
+
+  .slogan {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 28px;
+    line-height: 1.15;
+    letter-spacing: -0.9px;
+  }
+
+  .bento-card {
+    background: var(--card);
+    color: var(--card-foreground);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .bento-card:hover {
+    box-shadow: inset 0 0 0 1px rgba(212, 168, 67, 0.35),
+      0 24px 48px -12px rgba(0, 0, 0, 0.45);
+  }
+  .surface-light .bento-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .gold-glow {
+    box-shadow: 0 0 0 1px var(--gold-medal-edge),
+      0 8px 32px rgba(212, 168, 67, 0.25);
+  }
+
+  .frosted {
+    background: rgba(26, 26, 26, 0.78);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .btn-gold {
+    background: var(--brand-gold);
+    color: var(--ink);
+    border: 0;
+    padding: 12px 22px;
+    border-radius: 9999px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+    transition: background 220ms, transform 120ms;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-gold:hover:not(:disabled) {
+    background: var(--gold-light);
+  }
+  .btn-gold:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .btn-gold:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .text-platinum {
+    color: var(--brand-platinum);
+  }
+  .text-gold {
+    color: var(--brand-gold);
+  }
+
+  .equation {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.4px;
+  }
+  .equation .op {
+    color: var(--brand-gold);
+    padding: 0 6px;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
   }
 }

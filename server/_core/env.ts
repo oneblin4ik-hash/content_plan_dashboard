@@ -7,4 +7,11 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Optional direct Gemini fallback. If GEMINI_API_KEY is set and there is no
+  // Forge key, the LLM layer calls Gemini's OpenAI-compatible endpoint
+  // directly. Useful for Cloudflare / DIY deployments.
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  geminiApiUrl:
+    process.env.GEMINI_API_URL ??
+    "https://generativelanguage.googleapis.com/v1beta/openai",
 };

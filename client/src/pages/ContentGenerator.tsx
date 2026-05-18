@@ -1,472 +1,918 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Copy, Check, Zap, Sparkles, Loader2, Send } from "lucide-react";
+import {
+  Sparkles,
+  Loader2,
+  Copy,
+  Check,
+  Send,
+  Wand2,
+  Hash,
+  Layers,
+  ShieldCheck,
+  AlertTriangle,
+  Save,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
 
+type Mode = "pack" | "post" | "reels" | "hooks" | "hashtags" | "carousel";
+
+const TONE_OPTIONS = [
+  { v: "expert", label: "Эксперт", desc: "Авторитет, физиология, опыт зала" },
+  { v: "friend", label: "Друг", desc: "Эмпатия, как с подругой за кофе" },
+  { v: "provocative", label: "Провокатор", desc: "Цепляет на эмоциях" },
+] as const;
+
+const MODES: { v: Mode; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
+  { v: "pack", label: "Полный пакет", icon: Layers, desc: "Пост + Reels + хуки + хештеги" },
+  { v: "post", label: "Пост", icon: Wand2, desc: "Один полный пост" },
+  { v: "reels", label: "Reels", icon: Sparkles, desc: "Сценарий для вертикального видео" },
+  { v: "hooks", label: "Хуки", icon: Wand2, desc: "7 альтернативных первых фраз" },
+  { v: "hashtags", label: "Хештеги", icon: Hash, desc: "15 релевантных тегов" },
+  { v: "carousel", label: "Карусель", icon: Layers, desc: "7 слайдов для Instagram" },
+];
+
+const useTitleFromQuery = (set: (t: string) => void) => {
+  const [location] = useLocation();
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("title");
+    if (t) set(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+};
+
+type LibraryItem = {
+  id: string;
+  createdAt: number;
+  title: string;
+  mode: Mode;
+  payload: Record<string, unknown>;
+};
+
+const LIB_KEY = "serbolin.studio.library.v1";
+
+const loadLibrary = (): LibraryItem[] => {
+  try {
+    const r = localStorage.getItem(LIB_KEY);
+    return r ? (JSON.parse(r) as LibraryItem[]) : [];
+  } catch {
+    return [];
+  }
+};
+const saveLibrary = (items: LibraryItem[]) =>
+  localStorage.setItem(LIB_KEY, JSON.stringify(items));
+
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
-  const [selectedTab, setSelectedTab] = useState("post");
-  const [tone, setTone] = useState("expert");
-  const [duration, setDuration] = useState("15-30s");
-  const [includePost, setIncludePost] = useState(true);
-  const [includeReels, setIncludeReels] = useState(true);
+  const [mode, setMode] = useState<Mode>("pack");
+  const [tone, setTone] = useState<"expert" | "friend" | "provocative">("expert");
+  const [platform, setPlatform] = useState<"telegram" | "instagram">("instagram");
+  const [length, setLength] = useState<"short" | "medium" | "long">("medium");
+  const [duration, setDuration] = useState<"15-30s" | "30-60s">("15-30s");
+  const [slides, setSlides] = useState(7);
+  const [hookCount, setHookCount] = useState(7);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [voiceText, setVoiceText] = useState("");
 
-  // tRPC mutations
-  const generatePostMutation = trpc.content.generatePost.useMutation();
-  const generateReelsScriptMutation = trpc.content.generateReelsScript.useMutation();
-  const generateFullContentMutation = trpc.content.generateFullContent.useMutation();
-  const sendPostToTelegramMutation = trpc.telegram.sendPost.useMutation();
-  const sendReelsToTelegramMutation = trpc.telegram.sendReelsScript.useMutation();
-  const sendBothToTelegramMutation = trpc.telegram.sendBoth.useMutation();
+  useTitleFromQuery(setTitle);
+
+  const pack = trpc.content.generateFullPack.useMutation();
+  const post = trpc.content.generatePost.useMutation();
+  const reels = trpc.content.generateReelsScript.useMutation();
+  const hooks = trpc.content.generateHooks.useMutation();
+  const hashtags = trpc.content.generateHashtags.useMutation();
+  const carousel = trpc.content.generateCarousel.useMutation();
+  const validate = trpc.content.validateVoice.useQuery(
+    { text: voiceText || "placeholder text for validation rule check" },
+    { enabled: voiceText.length >= 20 }
+  );
+
+  const sendPostTG = trpc.telegram.sendPost.useMutation();
+  const sendReelsTG = trpc.telegram.sendReelsScript.useMutation();
+
+  const isLoading =
+    pack.isPending ||
+    post.isPending ||
+    reels.isPending ||
+    hooks.isPending ||
+    hashtags.isPending ||
+    carousel.isPending;
+
+  const handleGenerate = async () => {
+    if (!title.trim() || title.trim().length < 5) return;
+    if (mode === "pack") await pack.mutateAsync({ title, platform });
+    else if (mode === "post")
+      await post.mutateAsync({ title, tone, platform, length });
+    else if (mode === "reels")
+      await reels.mutateAsync({ title, duration });
+    else if (mode === "hooks")
+      await hooks.mutateAsync({ title, count: hookCount });
+    else if (mode === "hashtags") await hashtags.mutateAsync({ title, platform });
+    else if (mode === "carousel") await carousel.mutateAsync({ title, slides });
+  };
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    setTimeout(() => setCopiedId(null), 1800);
   };
 
-  const handleGeneratePost = async () => {
-    if (!title.trim()) return;
-    await generatePostMutation.mutateAsync({
+  const handleSaveToLibrary = () => {
+    let payload: Record<string, unknown> | null = null;
+    if (mode === "pack" && pack.data) payload = pack.data;
+    if (mode === "post" && post.data) payload = post.data;
+    if (mode === "reels" && reels.data) payload = reels.data;
+    if (mode === "hooks" && hooks.data) payload = hooks.data;
+    if (mode === "hashtags" && hashtags.data) payload = hashtags.data;
+    if (mode === "carousel" && carousel.data) payload = carousel.data;
+    if (!payload) return;
+
+    const item: LibraryItem = {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
       title,
-      tone: tone as "expert" | "friend" | "provocative",
-      platform: "telegram",
-    });
+      mode,
+      payload,
+    };
+    saveLibrary([item, ...loadLibrary()]);
+    setCopiedId("saved");
+    setTimeout(() => setCopiedId(null), 1800);
   };
-
-  const handleGenerateReels = async () => {
-    if (!title.trim()) return;
-    await generateReelsScriptMutation.mutateAsync({
-      title,
-      duration: duration as "15-30s" | "30-60s",
-    });
-  };
-
-  const handleGenerateFull = async () => {
-    if (!title.trim()) return;
-    await generateFullContentMutation.mutateAsync({
-      title,
-      includePost,
-      includeReelsScript: includeReels,
-    });
-  };
-
-  const handleSendPostToTelegram = async () => {
-    const post = (generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string);
-    if (!post) return;
-    await sendPostToTelegramMutation.mutateAsync({
-      content: post,
-      title: title || undefined,
-    });
-  };
-
-  const handleSendReelsToTelegram = async () => {
-    const script = (generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string);
-    if (!script) return;
-    await sendReelsToTelegramMutation.mutateAsync({
-      script: script,
-      title: title || undefined,
-    });
-  };
-
-  const handleSendBothToTelegram = async () => {
-    const post = (generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string);
-    const script = (generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string);
-    if (!post || !script) return;
-    await sendBothToTelegramMutation.mutateAsync({
-      post,
-      script,
-      title: title || undefined,
-    });
-  };
-
-  const isLoading =
-    generatePostMutation.isPending ||
-    generateReelsScriptMutation.isPending ||
-    generateFullContentMutation.isPending ||
-    sendPostToTelegramMutation.isPending ||
-    sendReelsToTelegramMutation.isPending ||
-    sendBothToTelegramMutation.isPending;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-border">
-        <div className="container py-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-                <Sparkles className="w-8 h-8 text-primary" />
-                Генератор контента
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Создавай готовые посты и сценарии Reels за секунды
-              </p>
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      <section style={{ padding: "56px 0 16px" }}>
+        <div className="container">
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Студия · Powered by Gemini 2.5 Flash
+          </div>
+          <h1>
+            Один пакет —{" "}
+            <span style={{ color: "var(--brand-gold)" }}>весь контент</span>{" "}
+            вокруг темы.
+          </h1>
+          <p
+            className="text-platinum"
+            style={{ maxWidth: 680, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
+          >
+            Введи тему — получи пост, сценарий Reels, альтернативные хуки,
+            релевантные хештеги и подпись. Голос настроен под Эдуарда: всегда «ты»,
+            без канцеляризмов, без декоративных эмодзи.
+          </p>
+        </div>
+      </section>
+
+      {/* MODE PICKER */}
+      <section style={{ padding: "24px 0" }}>
+        <div className="container">
+          <div
+            className="grid gap-2"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            }}
+          >
+            {MODES.map((m) => {
+              const active = mode === m.v;
+              const Icon = m.icon;
+              return (
+                <button
+                  key={m.v}
+                  onClick={() => setMode(m.v)}
+                  className="bento-card"
+                  style={{
+                    padding: 18,
+                    textAlign: "left",
+                    background: active ? "var(--brand-gold)" : "var(--card)",
+                    color: active ? "var(--ink)" : "var(--card-foreground)",
+                    cursor: "pointer",
+                    border: 0,
+                    boxShadow: active
+                      ? "0 0 0 1px var(--gold-medal-edge), 0 8px 32px rgba(212,168,67,.25)"
+                      : undefined,
+                  }}
+                >
+                  <Icon className="w-5 h-5" />
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 700,
+                      fontSize: 17,
+                      marginTop: 10,
+                      letterSpacing: "-0.3px",
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      marginTop: 4,
+                      opacity: 0.8,
+                    }}
+                  >
+                    {m.desc}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* INPUT */}
+      <section style={{ padding: "16px 0 32px" }}>
+        <div className="container">
+          <div className="bento-card" style={{ padding: 28 }}>
+            <div className="eyebrow" style={{ marginBottom: 14 }}>
+              Тема контента
+            </div>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder='Например: "Почему ПП-десерты — это ловушка"'
+              style={{
+                background: "var(--ink-3)",
+                borderColor: "rgba(255,255,255,0.1)",
+                color: "#fff",
+                fontSize: 17,
+                height: 56,
+                borderRadius: 14,
+                padding: "0 18px",
+              }}
+            />
+
+            {/* MODE-specific controls */}
+            <div className="grid gap-3 md:grid-cols-3" style={{ marginTop: 20 }}>
+              {(mode === "post" || mode === "pack") && (
+                <Selector
+                  label="Платформа"
+                  value={platform}
+                  options={[
+                    { v: "instagram", label: "Instagram" },
+                    { v: "telegram", label: "Telegram" },
+                  ]}
+                  onChange={(v) => setPlatform(v as "instagram" | "telegram")}
+                />
+              )}
+              {mode === "post" && (
+                <>
+                  <Selector
+                    label="Тон"
+                    value={tone}
+                    options={TONE_OPTIONS.map((t) => ({ v: t.v, label: t.label }))}
+                    onChange={(v) => setTone(v as typeof tone)}
+                  />
+                  <Selector
+                    label="Длина"
+                    value={length}
+                    options={[
+                      { v: "short", label: "Короткий (~250 слов)" },
+                      { v: "medium", label: "Средний (~400 слов)" },
+                      { v: "long", label: "Длинный (~800 слов)" },
+                    ]}
+                    onChange={(v) => setLength(v as typeof length)}
+                  />
+                </>
+              )}
+              {mode === "reels" && (
+                <Selector
+                  label="Длительность"
+                  value={duration}
+                  options={[
+                    { v: "15-30s", label: "15–30 с" },
+                    { v: "30-60s", label: "30–60 с" },
+                  ]}
+                  onChange={(v) => setDuration(v as typeof duration)}
+                />
+              )}
+              {mode === "hooks" && (
+                <Selector
+                  label="Сколько хуков"
+                  value={String(hookCount)}
+                  options={[
+                    { v: "3", label: "3" },
+                    { v: "5", label: "5" },
+                    { v: "7", label: "7" },
+                    { v: "10", label: "10" },
+                  ]}
+                  onChange={(v) => setHookCount(Number(v))}
+                />
+              )}
+              {mode === "carousel" && (
+                <Selector
+                  label="Слайдов"
+                  value={String(slides)}
+                  options={[
+                    { v: "5", label: "5" },
+                    { v: "6", label: "6" },
+                    { v: "7", label: "7" },
+                    { v: "8", label: "8" },
+                    { v: "10", label: "10" },
+                  ]}
+                  onChange={(v) => setSlides(Number(v))}
+                />
+              )}
+              {mode === "hashtags" && (
+                <Selector
+                  label="Платформа"
+                  value={platform}
+                  options={[
+                    { v: "instagram", label: "Instagram" },
+                    { v: "telegram", label: "Telegram" },
+                  ]}
+                  onChange={(v) => setPlatform(v as typeof platform)}
+                />
+              )}
+            </div>
+
+            <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || title.trim().length < 5}
+                className="btn-gold gold-glow"
+                style={{ padding: "14px 28px", fontSize: 15 }}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Генерирую...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" /> Сгенерировать
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleSaveToLibrary}
+                className="btn-gold"
+                style={{ background: "var(--ink-2)", color: "#fff" }}
+                disabled={
+                  !pack.data &&
+                  !post.data &&
+                  !reels.data &&
+                  !hooks.data &&
+                  !hashtags.data &&
+                  !carousel.data
+                }
+              >
+                <Save className="w-4 h-4" />
+                {copiedId === "saved" ? "Сохранено" : "В библиотеку"}
+              </button>
+            </div>
+
+            {(pack.error ||
+              post.error ||
+              reels.error ||
+              hooks.error ||
+              hashtags.error ||
+              carousel.error) && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 14,
+                  borderRadius: 14,
+                  background: "rgba(226,85,85,0.12)",
+                  color: "#ffb3b3",
+                  fontSize: 14,
+                }}
+              >
+                Что-то отвалилось. Попробуй ещё раз через секунду.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* RESULTS */}
+      <section style={{ padding: "16px 0 64px" }}>
+        <div className="container grid gap-4">
+          {mode === "pack" && pack.data && (
+            <PackResult
+              data={pack.data as never}
+              onCopy={handleCopy}
+              copiedId={copiedId}
+              onSendPost={() =>
+                sendPostTG.mutate({
+                  title,
+                  content: String((pack.data as Record<string, unknown>).post),
+                })
+              }
+            />
+          )}
+          {mode === "post" && post.data && (
+            <ResultCard
+              title="Готовый пост"
+              text={post.data.post}
+              copyId="post"
+              copiedId={copiedId}
+              onCopy={handleCopy}
+              onSend={() =>
+                sendPostTG.mutate({ title: post.data!.title, content: post.data!.post })
+              }
+            />
+          )}
+          {mode === "reels" && reels.data && (
+            <ResultCard
+              title="Сценарий Reels"
+              text={reels.data.script}
+              copyId="reels"
+              copiedId={copiedId}
+              onCopy={handleCopy}
+              onSend={() =>
+                sendReelsTG.mutate({
+                  title: reels.data!.title,
+                  script: reels.data!.script,
+                })
+              }
+            />
+          )}
+          {mode === "hooks" && hooks.data && (
+            <div className="bento-card" style={{ padding: 28 }}>
+              <div className="eyebrow" style={{ marginBottom: 14 }}>
+                Хуки · {hooks.data.hooks.length} вариантов
+              </div>
+              <div className="grid gap-2">
+                {hooks.data.hooks.map((h, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "14px 18px",
+                      background: "var(--ink-3)",
+                      borderRadius: 14,
+                      display: "flex",
+                      gap: 14,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontSize: 22,
+                        fontWeight: 700,
+                        color: "var(--brand-gold)",
+                        minWidth: 30,
+                      }}
+                    >
+                      {i + 1}
+                    </div>
+                    <p style={{ flex: 1, fontSize: 15, lineHeight: 1.4 }}>{h}</p>
+                    <button
+                      onClick={() => handleCopy(h, `hook-${i}`)}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        color: "var(--brand-platinum)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {copiedId === `hook-${i}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {mode === "hashtags" && hashtags.data && (
+            <div className="bento-card" style={{ padding: 28 }}>
+              <div className="eyebrow" style={{ marginBottom: 14 }}>
+                Хештеги · {hashtags.data.hashtags.length}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {hashtags.data.hashtags.map((t) => (
+                  <span
+                    key={t}
+                    onClick={() => handleCopy(t, t)}
+                    style={{
+                      padding: "8px 14px",
+                      background: "var(--gold-soft-fill)",
+                      color: "var(--brand-gold)",
+                      borderRadius: 9999,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      border: "1px solid var(--gold-medal-edge)",
+                    }}
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={() => handleCopy(hashtags.data!.hashtags.join(" "), "all-tags")}
+                className="btn-gold"
+                style={{
+                  background: "var(--ink-2)",
+                  color: "#fff",
+                  marginTop: 20,
+                }}
+              >
+                {copiedId === "all-tags" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                Скопировать все
+              </button>
+            </div>
+          )}
+          {mode === "carousel" && carousel.data && (
+            <ResultCard
+              title={`Карусель · ${carousel.data.slides} слайдов`}
+              text={carousel.data.carousel}
+              copyId="carousel"
+              copiedId={copiedId}
+              onCopy={handleCopy}
+            />
+          )}
+        </div>
+      </section>
+
+      {/* BRAND-VOICE VALIDATOR */}
+      <section style={{ padding: "32px 0 96px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="container">
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Brand-voice checker
+          </div>
+          <h2 style={{ marginBottom: 12, fontSize: 36 }}>
+            Проверь свой текст. <span style={{ color: "var(--brand-gold)" }}>Звучит как Эдуард?</span>
+          </h2>
+          <p
+            className="text-platinum"
+            style={{ maxWidth: 620, fontSize: 16, marginBottom: 24 }}
+          >
+            Локальный валидатор: ищет «вы», канцеляризмы, агрессивный sales и
+            декоративные эмодзи. Запускается, как только в поле ≥ 20 символов.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <textarea
+              value={voiceText}
+              onChange={(e) => setVoiceText(e.target.value)}
+              placeholder="Вставь свой пост или Reels-сценарий..."
+              rows={10}
+              style={{
+                background: "var(--ink-3)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 20,
+                padding: 20,
+                fontFamily: "var(--font-body)",
+                fontSize: 15,
+                lineHeight: 1.5,
+                resize: "vertical",
+                width: "100%",
+              }}
+            />
+            <div className="bento-card" style={{ padding: 24 }}>
+              {!validate.data && voiceText.length < 20 && (
+                <p className="text-platinum" style={{ fontSize: 14 }}>
+                  Минимум 20 символов — и тут появится оценка.
+                </p>
+              )}
+              {validate.data && (
+                <>
+                  <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontWeight: 700,
+                        fontSize: 64,
+                        letterSpacing: "-2px",
+                        lineHeight: 1,
+                        color: validate.data.passed
+                          ? "var(--brand-gold)"
+                          : "#e25555",
+                      }}
+                    >
+                      {validate.data.score}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div className="eyebrow">Оценка</div>
+                      <div style={{ fontSize: 13, marginTop: 6, color: "var(--brand-platinum)" }}>
+                        {validate.data.wordCount} слов
+                      </div>
+                    </div>
+                  </div>
+                  {validate.data.passed ? (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 14px",
+                        borderRadius: 9999,
+                        background: "rgba(212,168,67,0.12)",
+                        color: "var(--brand-gold)",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      <ShieldCheck className="w-4 h-4" /> Голос Эдуарда — на месте
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 14px",
+                        borderRadius: 9999,
+                        background: "rgba(226,85,85,0.12)",
+                        color: "#ffb3b3",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      <AlertTriangle className="w-4 h-4" /> Есть нарушения голоса
+                    </div>
+                  )}
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: "18px 0 0",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
+                    {validate.data.issues.length === 0 && (
+                      <li style={{ fontSize: 14, color: "var(--brand-platinum)" }}>
+                        Замечаний нет. Можно публиковать.
+                      </li>
+                    )}
+                    {validate.data.issues.map((iss, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 12,
+                          background: "var(--ink-3)",
+                          fontSize: 13,
+                          color: iss.severity === "error" ? "#ffb3b3" : "var(--brand-platinum)",
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <span
+                          style={{
+                            padding: "1px 7px",
+                            borderRadius: 9999,
+                            background:
+                              iss.severity === "error"
+                                ? "rgba(226,85,85,0.25)"
+                                : "rgba(212,168,67,0.18)",
+                            color:
+                              iss.severity === "error" ? "#ffb3b3" : "var(--brand-gold)",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {iss.severity === "error" ? "Стоп" : "Подумай"}
+                        </span>
+                        <span style={{ flex: 1 }}>
+                          {iss.rule}
+                          {iss.example && (
+                            <em
+                              style={{
+                                color: "var(--muted-foreground)",
+                                marginLeft: 6,
+                                fontStyle: "normal",
+                              }}
+                            >
+                              — найдено: «{iss.example}»
+                            </em>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Main Content */}
-      <main className="container py-8">
-        <div className="grid gap-8 md:grid-cols-3">
-          {/* Input Section */}
-          <div className="md:col-span-1">
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle className="text-lg">Параметры</CardTitle>
-                <CardDescription>Введи заголовок и выбери параметры</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">Заголовок темы</label>
-                  <Input
-                    placeholder="Например: Почему девушки толстеют от углеводов"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="mt-2"
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="post">Пост</TabsTrigger>
-                    <TabsTrigger value="reels">Reels</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="post" className="space-y-4 mt-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground">Тон голоса</label>
-                      <Select value={tone} onValueChange={setTone} disabled={isLoading}>
-                        <SelectTrigger className="mt-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="expert">Экспертный</SelectItem>
-                          <SelectItem value="friend">Дружеский</SelectItem>
-                          <SelectItem value="provocative">Провокационный</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Button
-                      onClick={handleGeneratePost}
-                      disabled={!title.trim() || isLoading}
-                      className="w-full"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Генерирую...
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="w-4 h-4 mr-2" />
-                          Создать пост
-                        </>
-                      )}
-                    </Button>
-                  </TabsContent>
-
-                  <TabsContent value="reels" className="space-y-4 mt-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground">Длительность</label>
-                      <Select value={duration} onValueChange={setDuration} disabled={isLoading}>
-                        <SelectTrigger className="mt-2">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="15-30s">15-30 секунд</SelectItem>
-                          <SelectItem value="30-60s">30-60 секунд</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Button
-                      onClick={handleGenerateReels}
-                      disabled={!title.trim() || isLoading}
-                      className="w-full"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Генерирую...
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="w-4 h-4 mr-2" />
-                          Создать сценарий
-                        </>
-                      )}
-                    </Button>
-                  </TabsContent>
-                </Tabs>
-
-                <div className="border-t pt-4">
-                  <h3 className="text-sm font-semibold mb-3">Создать всё сразу</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="include-post"
-                        checked={includePost}
-                        onCheckedChange={(checked) => setIncludePost(checked as boolean)}
-                        disabled={isLoading}
-                      />
-                      <label htmlFor="include-post" className="text-sm cursor-pointer">
-                        Пост для Telegram
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="include-reels"
-                        checked={includeReels}
-                        onCheckedChange={(checked) => setIncludeReels(checked as boolean)}
-                        disabled={isLoading}
-                      />
-                      <label htmlFor="include-reels" className="text-sm cursor-pointer">
-                        Сценарий Reels
-                      </label>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleGenerateFull}
-                    disabled={!title.trim() || isLoading || (!includePost && !includeReels)}
-                    className="w-full mt-4"
-                    variant="outline"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Генерирую...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Создать всё
-                      </>
-                    )}
-                  </Button>
-
-                  {((generateFullContentMutation.data as any)?.post || (generateFullContentMutation.data as any)?.reelsScript) && (
-                    <Button
-                      onClick={handleSendBothToTelegram}
-                      disabled={sendBothToTelegramMutation.isPending}
-                      className="w-full mt-2 bg-blue-500 hover:bg-blue-600"
-                    >
-                      {sendBothToTelegramMutation.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Отправляю...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 mr-2" />
-                          Отправить всё в TG
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {sendBothToTelegramMutation.data && (
-                    <p className="text-sm text-green-600 text-center mt-2">✅ {sendBothToTelegramMutation.data.message}</p>
-                  )}
-                  {sendBothToTelegramMutation.error && (
-                    <p className="text-sm text-red-600 text-center mt-2">❌ {sendBothToTelegramMutation.error.message}</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Results Section */}
-          <div className="md:col-span-2 space-y-6">
-            {/* Post Result */}
-            {(generatePostMutation.data || (generateFullContentMutation.data as any)?.post) && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Готовый пост</CardTitle>
-                      <CardDescription>Для Telegram канала</CardDescription>
-                    </div>
-                    <Badge>Готово</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-secondary/50 p-4 rounded-lg max-h-96 overflow-y-auto">
-                    <Streamdown>
-                      {(generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string) || ""}
-                    </Streamdown>
-                  </div>
-                  <div className="space-y-2">
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        const text = ((generatePostMutation.data?.post as string) || (generateFullContentMutation.data?.post as string) || "");
-                        handleCopy(text, "post");
-                      }}
-                    >
-                      {copiedId === "post" ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          Скопировано!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Скопировать пост
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      className="w-full bg-blue-500 hover:bg-blue-600"
-                      onClick={handleSendPostToTelegram}
-                      disabled={((!generatePostMutation.data?.post && !generateFullContentMutation.data?.post) || sendPostToTelegramMutation.isPending)}
-                    >
-                      {sendPostToTelegramMutation.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Отправляю...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 mr-2" />
-                          Отправить в Telegram
-                        </>
-                      )}
-                    </Button>
-                    {sendPostToTelegramMutation.data && (
-                      <p className="text-sm text-green-600 text-center">✅ {sendPostToTelegramMutation.data.message}</p>
-                    )}
-                    {sendPostToTelegramMutation.error && (
-                      <p className="text-sm text-red-600 text-center">❌ {sendPostToTelegramMutation.error.message}</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Reels Script Result */}
-            {(generateReelsScriptMutation.data || (generateFullContentMutation.data as any)?.reelsScript) && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Сценарий Reels</CardTitle>
-                      <CardDescription>Для Instagram</CardDescription>
-                    </div>
-                    <Badge variant="secondary">Готово</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-secondary/50 p-4 rounded-lg max-h-96 overflow-y-auto">
-                    <Streamdown>
-                      {(generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string) || ""}
-                    </Streamdown>
-                  </div>
-                  <div className="space-y-2">
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        const text = ((generateReelsScriptMutation.data?.script as string) || (generateFullContentMutation.data?.reelsScript as string) || "");
-                        handleCopy(text, "reels");
-                      }}
-                    >
-                      {copiedId === "reels" ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          Скопировано!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Скопировать сценарий
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      className="w-full bg-blue-500 hover:bg-blue-600"
-                      onClick={handleSendReelsToTelegram}
-                      disabled={((!generateReelsScriptMutation.data?.script && !generateFullContentMutation.data?.reelsScript) || sendReelsToTelegramMutation.isPending)}
-                    >
-                      {sendReelsToTelegramMutation.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Отправляю...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4 mr-2" />
-                          Отправить в Telegram
-                        </>
-                      )}
-                    </Button>
-                    {sendReelsToTelegramMutation.data && (
-                      <p className="text-sm text-green-600 text-center">✅ {sendReelsToTelegramMutation.data.message}</p>
-                    )}
-                    {sendReelsToTelegramMutation.error && (
-                      <p className="text-sm text-red-600 text-center">❌ {sendReelsToTelegramMutation.error.message}</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Empty State */}
-            {!generatePostMutation.data &&
-              !generateReelsScriptMutation.data &&
-              !generateFullContentMutation.data?.post &&
-              !generateFullContentMutation.data?.reelsScript && (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Sparkles className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
-                    <p className="text-muted-foreground text-center">
-                      Введи заголовок и нажми кнопку генерации
-                    </p>
-                    <p className="text-sm text-muted-foreground text-center mt-2">
-                      AI создаст готовый контент за несколько секунд
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-            {/* Error State */}
-            {(generatePostMutation.error ||
-              generateReelsScriptMutation.error ||
-              generateFullContentMutation.error) && (
-              <Card className="border-red-200 bg-red-50">
-                <CardContent className="pt-6">
-                  <p className="text-red-700 text-sm">
-                    Ошибка при генерации:{" "}
-                    {generatePostMutation.error?.message ||
-                      generateReelsScriptMutation.error?.message ||
-                      generateFullContentMutation.error?.message}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-secondary/50 mt-12">
-        <div className="container py-8 text-center text-sm text-muted-foreground">
-          <p>Генератор контента • Создавай вирусный контент за секунды</p>
-        </div>
-      </footer>
+      </section>
     </div>
+  );
+}
+
+function Selector({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { v: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>
+        {label}
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          height: 44,
+          padding: "0 14px",
+          borderRadius: 12,
+          background: "var(--ink-3)",
+          color: "#fff",
+          border: "1px solid rgba(255,255,255,0.1)",
+          fontFamily: "var(--font-body)",
+          fontSize: 14,
+          fontWeight: 500,
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.v} value={o.v} style={{ background: "#222" }}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ResultCard({
+  title,
+  text,
+  copyId,
+  copiedId,
+  onCopy,
+  onSend,
+}: {
+  title: string;
+  text: string;
+  copyId: string;
+  copiedId: string | null;
+  onCopy: (text: string, id: string) => void;
+  onSend?: () => void;
+}) {
+  return (
+    <div className="bento-card" style={{ padding: 28 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <div className="eyebrow">{title}</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onCopy(text, copyId)}
+            className="btn-gold"
+            style={{ background: "var(--ink-2)", color: "#fff", padding: "8px 14px", fontSize: 13 }}
+          >
+            {copiedId === copyId ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            {copiedId === copyId ? "Скопировано" : "Скопировать"}
+          </button>
+          {onSend && (
+            <button
+              onClick={onSend}
+              className="btn-gold"
+              style={{ padding: "8px 14px", fontSize: 13 }}
+            >
+              <Send className="w-4 h-4" />В Telegram
+            </button>
+          )}
+        </div>
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: 15,
+          lineHeight: 1.6,
+          color: "var(--brand-platinum)",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        <Streamdown>{text}</Streamdown>
+      </div>
+    </div>
+  );
+}
+
+function PackResult({
+  data,
+  onCopy,
+  copiedId,
+  onSendPost,
+}: {
+  data: {
+    post?: string;
+    reelsScript?: string;
+    hooks?: string[];
+    hashtags?: string[];
+    caption?: string;
+    parseError?: boolean;
+  };
+  onCopy: (text: string, id: string) => void;
+  copiedId: string | null;
+  onSendPost: () => void;
+}) {
+  return (
+    <>
+      {data.parseError && (
+        <div
+          className="bento-card"
+          style={{
+            background: "rgba(226,85,85,0.1)",
+            padding: 16,
+            fontSize: 13,
+            color: "#ffb3b3",
+          }}
+        >
+          Не получилось распарсить структурированный ответ — показываю сырой текст.
+        </div>
+      )}
+      {data.post && (
+        <ResultCard
+          title="Пост"
+          text={data.post}
+          copyId="pack-post"
+          copiedId={copiedId}
+          onCopy={onCopy}
+          onSend={onSendPost}
+        />
+      )}
+      {data.reelsScript && (
+        <ResultCard
+          title="Reels-сценарий"
+          text={data.reelsScript}
+          copyId="pack-reels"
+          copiedId={copiedId}
+          onCopy={onCopy}
+        />
+      )}
+      {data.caption && (
+        <ResultCard
+          title="Подпись"
+          text={data.caption}
+          copyId="pack-caption"
+          copiedId={copiedId}
+          onCopy={onCopy}
+        />
+      )}
+      {data.hooks && data.hooks.length > 0 && (
+        <div className="bento-card" style={{ padding: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Альтернативные хуки
+          </div>
+          <div className="grid gap-2">
+            {data.hooks.map((h, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "12px 16px",
+                  background: "var(--ink-3)",
+                  borderRadius: 14,
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                <span
+                  style={{
+                    color: "var(--brand-gold)",
+                    fontWeight: 700,
+                    marginRight: 8,
+                  }}
+                >
+                  {i + 1}.
+                </span>
+                {h}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {data.hashtags && data.hashtags.length > 0 && (
+        <div className="bento-card" style={{ padding: 28 }}>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Хештеги
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {data.hashtags.map((t) => (
+              <span
+                key={t}
+                style={{
+                  padding: "6px 12px",
+                  background: "var(--gold-soft-fill)",
+                  color: "var(--brand-gold)",
+                  borderRadius: 9999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "1px solid var(--gold-medal-edge)",
+                }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
