@@ -1,0 +1,21 @@
+name = "content-studio"
+main = "dist/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "ddeb4be7a2f03ae226b8308518983f2b"
+
+[assets]
+directory = "./dist/public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[vars]
+NODE_ENV = "production"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+# D1 binding — kept for future direct-binding migration. Today we use the
+# REST API via CLOUDFLARE_* secrets, so the binding is informational only.
+[[d1_databases]]
+binding = "DB"
+database_name = "content-studio"
+database_id = "bdb657d9-c202-4e6f-8689-51e9ed931b71"
