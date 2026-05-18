@@ -338,7 +338,7 @@ export default function ContentGenerator() {
                         const newTopic = {
                           id: Math.max(...allContentTopics.map((t: any) => t.id), 0) + 1,
                           title: postTitle,
-                          reason: `Рубрика: ${rubric === 'lifeHack' ? 'Лайфхак' : rubric === 'overheardFromTrainer' ? 'Подслушано у тренера' : 'Общая'}`,
+                          reason: `Рубрика: ${rubric === "lifeHack" ? 'Лайфхак' : rubric === "overheardFromTrainer" ? 'Подслушано у тренера' : 'Общая'}`,
                           interest: "Высокий",
                           format: "Пост",
                           potential: "Высокий",
