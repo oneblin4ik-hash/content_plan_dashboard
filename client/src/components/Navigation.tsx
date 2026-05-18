@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { BarChart3, BookOpen, Sparkles, Calendar, Library } from "lucide-react";
+import { BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound } from "lucide-react";
 
 const items = [
   { href: "/", label: "План", icon: BookOpen },
@@ -7,6 +7,7 @@ const items = [
   { href: "/library", label: "Библиотека", icon: Library },
   { href: "/calendar", label: "Календарь", icon: Calendar },
   { href: "/analytics", label: "Аналитика", icon: BarChart3 },
+  { href: "/settings", label: "Sync", icon: KeyRound },
 ];
 
 export default function Navigation() {

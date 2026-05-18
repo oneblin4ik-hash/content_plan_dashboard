@@ -1,0 +1,220 @@
+import { z } from "zod";
+import { publicProcedure, router } from "../_core/trpc";
+import { d1Query, d1Execute, isD1Configured } from "../_core/d1";
+
+/**
+ * Sync router — cross-device persistence for Content Studio via Cloudflare D1.
+ *
+ * Identity model: a "workspace key" — a UUID stored client-side that scopes
+ * data. To sync to another device, the user pastes the same workspace key.
+ * No accounts, no passwords, no PII. Aligns with the brand's "система,
+ * а не марафон" — minimal friction.
+ */
+
+const wsKey = z
+  .string()
+  .min(8, "Workspace key минимум 8 символов")
+  .max(64, "Workspace key максимум 64 символа");
+
+const modeEnum = z.enum([
+  "pack",
+  "post",
+  "reels",
+  "hooks",
+  "hashtags",
+  "carousel",
+]);
+
+export const syncRouter = router({
+  /** Lightweight health check the client uses to decide localStorage vs cloud. */
+  status: publicProcedure.query(() => ({
+    enabled: isD1Configured(),
+  })),
+
+  library: router({
+    list: publicProcedure
+      .input(z.object({ workspaceKey: wsKey, limit: z.number().int().min(1).max(200).default(100) }))
+      .query(async ({ input }) => {
+        const rows = await d1Query<{
+          id: string;
+          title: string;
+          mode: string;
+          platform: string | null;
+          payload_json: string;
+          created_at: number;
+        }>(
+          "SELECT id, title, mode, platform, payload_json, created_at FROM generations WHERE workspace_key = ? ORDER BY created_at DESC LIMIT ?",
+          [input.workspaceKey, input.limit]
+        );
+        return rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          mode: r.mode,
+          platform: r.platform,
+          payload: JSON.parse(r.payload_json),
+          createdAt: r.created_at,
+        }));
+      }),
+
+    save: publicProcedure
+      .input(
+        z.object({
+          workspaceKey: wsKey,
+          id: z.string().uuid().optional(),
+          title: z.string().min(1),
+          mode: modeEnum,
+          platform: z.string().optional(),
+          payload: z.unknown(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = input.id ?? crypto.randomUUID();
+        const now = Date.now();
+        await d1Execute(
+          "INSERT INTO generations (id, workspace_key, title, mode, platform, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            id,
+            input.workspaceKey,
+            input.title,
+            input.mode,
+            input.platform ?? null,
+            JSON.stringify(input.payload),
+            now,
+          ]
+        );
+        return { id, createdAt: now };
+      }),
+
+    delete: publicProcedure
+      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
+      .mutation(async ({ input }) => {
+        await d1Execute(
+          "DELETE FROM generations WHERE workspace_key = ? AND id = ?",
+          [input.workspaceKey, input.id]
+        );
+        return { ok: true };
+      }),
+
+    clear: publicProcedure
+      .input(z.object({ workspaceKey: wsKey }))
+      .mutation(async ({ input }) => {
+        await d1Execute("DELETE FROM generations WHERE workspace_key = ?", [
+          input.workspaceKey,
+        ]);
+        return { ok: true };
+      }),
+  }),
+
+  scheduled: router({
+    list: publicProcedure
+      .input(z.object({ workspaceKey: wsKey }))
+      .query(async ({ input }) => {
+        const rows = await d1Query<{
+          id: string;
+          date: string;
+          title: string;
+          format: string | null;
+          topic_id: number | null;
+          status: string;
+          created_at: number;
+        }>(
+          "SELECT id, date, title, format, topic_id, status, created_at FROM scheduled WHERE workspace_key = ? ORDER BY date ASC",
+          [input.workspaceKey]
+        );
+        return rows.map((r) => ({
+          id: r.id,
+          date: r.date,
+          title: r.title,
+          format: r.format,
+          topicId: r.topic_id,
+          status: r.status,
+          createdAt: r.created_at,
+        }));
+      }),
+
+    save: publicProcedure
+      .input(
+        z.object({
+          workspaceKey: wsKey,
+          id: z.string().uuid().optional(),
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          title: z.string().min(1),
+          format: z.string().optional(),
+          topicId: z.number().int().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = input.id ?? crypto.randomUUID();
+        await d1Execute(
+          "INSERT INTO scheduled (id, workspace_key, date, title, format, topic_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)",
+          [
+            id,
+            input.workspaceKey,
+            input.date,
+            input.title,
+            input.format ?? null,
+            input.topicId ?? null,
+            Date.now(),
+          ]
+        );
+        return { id };
+      }),
+
+    delete: publicProcedure
+      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
+      .mutation(async ({ input }) => {
+        await d1Execute(
+          "DELETE FROM scheduled WHERE workspace_key = ? AND id = ?",
+          [input.workspaceKey, input.id]
+        );
+        return { ok: true };
+      }),
+  }),
+
+  publishedState: router({
+    list: publicProcedure
+      .input(z.object({ workspaceKey: wsKey }))
+      .query(async ({ input }) => {
+        return await d1Query<{
+          topic_id: number;
+          published: number;
+          views: number;
+          engagement_rate_x100: number;
+        }>(
+          "SELECT topic_id, published, views, engagement_rate_x100 FROM published_state WHERE workspace_key = ?",
+          [input.workspaceKey]
+        );
+      }),
+
+    upsert: publicProcedure
+      .input(
+        z.object({
+          workspaceKey: wsKey,
+          topicId: z.number().int(),
+          published: z.boolean(),
+          views: z.number().int().default(0),
+          engagementRateX100: z.number().int().default(0),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await d1Execute(
+          `INSERT INTO published_state (workspace_key, topic_id, published, views, engagement_rate_x100, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(workspace_key, topic_id) DO UPDATE SET
+             published = excluded.published,
+             views = excluded.views,
+             engagement_rate_x100 = excluded.engagement_rate_x100,
+             updated_at = excluded.updated_at`,
+          [
+            input.workspaceKey,
+            input.topicId,
+            input.published ? 1 : 0,
+            input.views,
+            input.engagementRateX100,
+            Date.now(),
+          ]
+        );
+        return { ok: true };
+      }),
+  }),
+});

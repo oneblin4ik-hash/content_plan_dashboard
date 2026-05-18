@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
-
-type Mode = "pack" | "post" | "reels" | "hooks" | "hashtags" | "carousel";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { localLibrary, type Mode } from "@/lib/syncStorage";
 
 const TONE_OPTIONS = [
   { v: "expert", label: "Эксперт", desc: "Авторитет, физиология, опыт зала" },
@@ -44,26 +44,7 @@ const useTitleFromQuery = (set: (t: string) => void) => {
   }, [location]);
 };
 
-type LibraryItem = {
-  id: string;
-  createdAt: number;
-  title: string;
-  mode: Mode;
-  payload: Record<string, unknown>;
-};
-
-const LIB_KEY = "serbolin.studio.library.v1";
-
-const loadLibrary = (): LibraryItem[] => {
-  try {
-    const r = localStorage.getItem(LIB_KEY);
-    return r ? (JSON.parse(r) as LibraryItem[]) : [];
-  } catch {
-    return [];
-  }
-};
-const saveLibrary = (items: LibraryItem[]) =>
-  localStorage.setItem(LIB_KEY, JSON.stringify(items));
+/* persistence handled by syncStorage / sync.library tRPC */
 
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
@@ -78,6 +59,8 @@ export default function ContentGenerator() {
   const [voiceText, setVoiceText] = useState("");
 
   useTitleFromQuery(setTitle);
+  const { workspaceKey, cloudEnabled } = useWorkspace();
+  const cloudSave = trpc.sync.library.save.useMutation();
 
   const pack = trpc.content.generateFullPack.useMutation();
   const post = trpc.content.generatePost.useMutation();
@@ -120,7 +103,7 @@ export default function ContentGenerator() {
     setTimeout(() => setCopiedId(null), 1800);
   };
 
-  const handleSaveToLibrary = () => {
+  const handleSaveToLibrary = async () => {
     let payload: Record<string, unknown> | null = null;
     if (mode === "pack" && pack.data) payload = pack.data;
     if (mode === "post" && post.data) payload = post.data;
@@ -130,14 +113,34 @@ export default function ContentGenerator() {
     if (mode === "carousel" && carousel.data) payload = carousel.data;
     if (!payload) return;
 
-    const item: LibraryItem = {
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
-      title,
-      mode,
-      payload,
-    };
-    saveLibrary([item, ...loadLibrary()]);
+    if (cloudEnabled && workspaceKey) {
+      try {
+        await cloudSave.mutateAsync({
+          workspaceKey,
+          title,
+          mode,
+          platform: mode === "post" || mode === "pack" || mode === "hashtags" ? platform : undefined,
+          payload,
+        });
+      } catch {
+        // Fallback to local on cloud failure.
+        localLibrary.add({
+          id: crypto.randomUUID(),
+          createdAt: Date.now(),
+          title,
+          mode,
+          payload,
+        });
+      }
+    } else {
+      localLibrary.add({
+        id: crypto.randomUUID(),
+        createdAt: Date.now(),
+        title,
+        mode,
+        payload,
+      });
+    }
     setCopiedId("saved");
     setTimeout(() => setCopiedId(null), 1800);
   };

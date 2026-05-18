@@ -1,18 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Library as LibIcon, Copy, Check, Trash2, Sparkles } from "lucide-react";
-
-type Mode = "pack" | "post" | "reels" | "hooks" | "hashtags" | "carousel";
-
-type LibraryItem = {
-  id: string;
-  createdAt: number;
-  title: string;
-  mode: Mode;
-  payload: Record<string, unknown>;
-};
-
-const LIB_KEY = "serbolin.studio.library.v1";
+import { Library as LibIcon, Copy, Check, Trash2, Sparkles, Cloud, CloudOff } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { localLibrary, type LibraryItem, type Mode } from "@/lib/syncStorage";
 
 const MODE_LABEL: Record<Mode, string> = {
   pack: "Пакет",
@@ -22,16 +13,6 @@ const MODE_LABEL: Record<Mode, string> = {
   hashtags: "Хештеги",
   carousel: "Карусель",
 };
-
-const load = (): LibraryItem[] => {
-  try {
-    return JSON.parse(localStorage.getItem(LIB_KEY) || "[]");
-  } catch {
-    return [];
-  }
-};
-const save = (items: LibraryItem[]) =>
-  localStorage.setItem(LIB_KEY, JSON.stringify(items));
 
 const previewOf = (item: LibraryItem): string => {
   const p = item.payload as Record<string, unknown>;
@@ -44,26 +25,57 @@ const previewOf = (item: LibraryItem): string => {
 };
 
 export default function Library() {
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const { workspaceKey, cloudEnabled } = useWorkspace();
+  const [localItems, setLocalItems] = useState<LibraryItem[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | Mode>("all");
 
+  const cloudList = trpc.sync.library.list.useQuery(
+    { workspaceKey, limit: 200 },
+    { enabled: cloudEnabled && workspaceKey.length > 0 }
+  );
+  const cloudDelete = trpc.sync.library.delete.useMutation({
+    onSuccess: () => cloudList.refetch(),
+  });
+  const cloudClear = trpc.sync.library.clear.useMutation({
+    onSuccess: () => cloudList.refetch(),
+  });
+
   useEffect(() => {
-    setItems(load());
-  }, []);
+    if (!cloudEnabled) setLocalItems(localLibrary.load());
+  }, [cloudEnabled]);
+
+  const items: LibraryItem[] = useMemo(() => {
+    if (cloudEnabled) {
+      return (cloudList.data ?? []).map((r) => ({
+        id: r.id,
+        title: r.title,
+        mode: r.mode as Mode,
+        platform: r.platform ?? undefined,
+        payload: r.payload as Record<string, unknown>,
+        createdAt: r.createdAt,
+      }));
+    }
+    return localItems;
+  }, [cloudEnabled, cloudList.data, localItems]);
 
   const filtered = filter === "all" ? items : items.filter((i) => i.mode === filter);
 
   const remove = (id: string) => {
-    const next = items.filter((i) => i.id !== id);
-    setItems(next);
-    save(next);
+    if (cloudEnabled) cloudDelete.mutate({ workspaceKey, id });
+    else {
+      localLibrary.remove(id);
+      setLocalItems(localLibrary.load());
+    }
   };
 
   const clear = () => {
     if (!confirm("Очистить всю библиотеку?")) return;
-    setItems([]);
-    save([]);
+    if (cloudEnabled) cloudClear.mutate({ workspaceKey });
+    else {
+      localLibrary.clear();
+      setLocalItems([]);
+    }
   };
 
   const copy = (text: string, id: string) => {
@@ -76,8 +88,35 @@ export default function Library() {
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
       <section style={{ padding: "56px 0 16px" }}>
         <div className="container">
-          <div className="eyebrow" style={{ marginBottom: 14 }}>
-            Библиотека
+          <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+            <span className="eyebrow">Библиотека</span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "3px 10px",
+                borderRadius: 9999,
+                background: cloudEnabled
+                  ? "rgba(212,168,67,0.12)"
+                  : "rgba(255,255,255,0.06)",
+                color: cloudEnabled ? "var(--brand-gold)" : "var(--muted-foreground)",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: 1.5,
+                textTransform: "uppercase",
+              }}
+            >
+              {cloudEnabled ? (
+                <>
+                  <Cloud className="w-3 h-3" /> Cloud sync · {workspaceKey}
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3 h-3" /> Локально
+                </>
+              )}
+            </span>
           </div>
           <h1>
             Сохранённый <span style={{ color: "var(--brand-gold)" }}>контент.</span>
@@ -86,13 +125,13 @@ export default function Library() {
             className="text-platinum"
             style={{ maxWidth: 620, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
           >
-            Всё, что сгенерировал в Студии и нажал «В библиотеку», лежит здесь.
-            Локально, в браузере — никаких аккаунтов.
+            Всё, что сгенерировал и сохранил, ждёт тебя здесь — на этом устройстве
+            или на любом другом с тем же workspace-ключом.
           </p>
         </div>
       </section>
 
-      <section style={{ padding: "24px 0" }}>
+      <section style={{ padding: "24px 0 96px" }}>
         <div className="container">
           <div
             className="flex items-center justify-between gap-3 flex-wrap"
@@ -121,6 +160,7 @@ export default function Library() {
                       fontWeight: 600,
                       background: filter === k ? "var(--brand-gold)" : "transparent",
                       color: filter === k ? "var(--ink)" : "var(--brand-platinum)",
+                      cursor: "pointer",
                     }}
                   >
                     {k === "all" ? "Все" : MODE_LABEL[k]}
@@ -147,14 +187,12 @@ export default function Library() {
             </div>
           </div>
 
-          {filtered.length === 0 ? (
-            <div
-              className="bento-card"
-              style={{
-                padding: 56,
-                textAlign: "center",
-              }}
-            >
+          {cloudEnabled && cloudList.isLoading ? (
+            <div className="bento-card" style={{ padding: 56, textAlign: "center" }}>
+              <p className="text-platinum">Загружаю...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bento-card" style={{ padding: 56, textAlign: "center" }}>
               <LibIcon
                 className="w-12 h-12"
                 style={{
@@ -189,12 +227,7 @@ export default function Library() {
                       >
                         {MODE_LABEL[it.mode]}
                       </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "var(--muted-foreground)",
-                        }}
-                      >
+                      <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
                         {new Date(it.createdAt).toLocaleDateString("ru-RU")}
                       </span>
                     </div>
@@ -235,11 +268,7 @@ export default function Library() {
                           justifyContent: "center",
                         }}
                       >
-                        {copied === it.id ? (
-                          <Check className="w-3 h-3" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
+                        {copied === it.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         Копировать
                       </button>
                       <button
