@@ -1,0 +1,45 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "db",
+    "server",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://2AixS1ipwQK1MqY.74d814b868a4:jDbV68XZvgpnXv43bV97@gateway05.us-east-1.prod.aws.tidbcloud.com:4000/EkoUeXxnShLLHGoKBgwEQV?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": [
+    "no_db_push"
+  ],
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663530345255/EkoUeXxnShLLHGoKBgwEQV",
+    "access_key_id": "ASIAZV3A2ECZPH5GVDHK",
+    "secret_access_key": "i9M46++AJtRfLwVi9Pm+JixxKEiFhdmghvJumC0j",
+    "session_token": "IQoJb3JpZ2luX2VjEPX//////////wEaCXVzLWVhc3QtMSJHMEUCIAlvhvOU7w7BLwR7pSSfw83dSMNFzTG1SAhdqhaYPsyPAiEAsA8yYjFdUUydRCOj6hImoPh19SCT8TJxvJMn99UzMeAq/wMIvv//////////ARAEGgw2NjUzODYwOTg4NjYiDNXJ7YNFT+1HYljo+yrTAxoHuDiEfbR4cMd/1i6WM6MLN1pNeuZ/98xUbTwDpl6NZEvgIXCws0F6RoKafMk9xrYsKp4G+HE/Qu2uBtYmm/whdPn+5tW+E5mOWyjgKKIDjlbfVImRb0FBCJ0+CQjJDREgbYzvN4q7wWlohXkXA3VMqs3Wz8PXQ2Y7rKimv5e+ywzUvP4xvvMt5J/u9FKWe7VVVsqcjZaqyazduglk7yJ+zBo/dq/CRqhSUmVDhXT5HicZD+Ko6gZ4E2mzHhbnxh9ylRRX4ryVztrNRhRC9q8gr8H4RgFKic1E9VbwSCrKXLk/2NHiokkK112Vmw/K9oDR+ZySKjWcz8zNBpIqHcH0IKRADlpsXSj7r3aKM6nD6wy+/XCt2Tm0PUfwF3Ti/2SgxnLJ4lOzHdT9djJg+UoQxu//T43TNTieFjtcYE1ubSu00I3lT790RZUFF9nc0BB2FrFwfXiDJ5LQYPlOKyX7LoxpIWZXk8HrE22nBztAo1UCHqX2B2+rXuCX5C3JINZunAz5n5bsOWCyJOd1oibzi37G7HrSayDZDp+OU7eXkfNLrq1MBN5/ePQrCqJqLE7qxy6tBo/b3iTet990QIp6sZ5lAqJzy81ojAVZY8T/ypPrMJKOrNAGOp0BSKj3GiRWkMLgDBUJ4nLjjPvgoP0jHDxI8KpD4y9cVJrz4AH7mm9A9xnId2WTvPtu/2n5Xmo0eld2+0WBGRuMkjHNVchQ6j2hF5yVjAPlNJ2EEtf1CmGnm/qqkjpw9boRfeiFEp5ggLWcKbf0vvhY1odHNACvRPbYm9zcxZnD5w0VtxWGjuj+noydwgh6nibQbOWjQbWcuA3GoplKzA==",
+    "expiration": "2026-05-19T00:33:22.000Z"
+  },
+  "name": "content_plan_dashboard",
+  "path": "/home/ubuntu/content_plan_dashboard",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "a7GibWYyZrMU5XSP7JwzGn",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "DAVvTpQEUn77RynA34kQ2H",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Mr. Serbolin",
+    "OWNER_OPEN_ID": "M69YYNt5Zugu9jTmhPuQWR",
+    "TELEGRAM_BOT_TOKEN": "8546142811:AAEQPM8pgioAiMOlH7ZdokIyMcn_ZIH87FQ",
+    "TELEGRAM_CHAT_ID": "708122486",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "5598c8cd-8d08-4015-b237-3d676fba778c",
+    "VITE_APP_ID": "EkoUeXxnShLLHGoKBgwEQV",
+    "VITE_APP_LOGO": "https://files.manuscdn.com/user_upload_by_module/web_dev_logo/310519663530345255/TeziYTBUgKlpoIGC.png",
+    "VITE_APP_TITLE": "Content Plan Dashboard for Eduard Serbolin",
+    "VITE_FRONTEND_FORGE_API_KEY": "bVE5BpDEHkJbEopXRJK4Br",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}
