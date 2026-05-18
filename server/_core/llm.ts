@@ -209,7 +209,7 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-type LLMRoute = { url: string; apiKey: string; model: string };
+type LLMRoute = { url: string; apiKey: string; model: string; isForge?: boolean };
 
 const resolveRoute = (): LLMRoute => {
   if (ENV.forgeApiKey) {
@@ -221,6 +221,7 @@ const resolveRoute = (): LLMRoute => {
       url: `${base}/v1/chat/completions`,
       apiKey: ENV.forgeApiKey,
       model: "gemini-2.5-flash",
+      isForge: true,
     };
   }
   if (ENV.geminiApiKey) {
@@ -313,8 +314,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  if (route.isForge) {
+    payload.thinking = { budget_tokens: 128 };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
