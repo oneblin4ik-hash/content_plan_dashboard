@@ -17,6 +17,7 @@ export default function ContentGenerator() {
   const [selectedTab, setSelectedTab] = useState("post");
   const [tone, setTone] = useState("expert");
   const [duration, setDuration] = useState("15-30s");
+  const [rubric, setRubric] = useState("general");
   const [includePost, setIncludePost] = useState(true);
   const [includeReels, setIncludeReels] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
