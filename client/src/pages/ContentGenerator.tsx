@@ -55,6 +55,12 @@ export default function ContentGenerator() {
   const [duration, setDuration] = useState<"15-30s" | "30-60s">("15-30s");
   const [slides, setSlides] = useState(7);
   const [hookCount, setHookCount] = useState(7);
+  const [selectedTab, setSelectedTab] = useState("post");
+  const [tone, setTone] = useState("expert");
+  const [duration, setDuration] = useState("15-30s");
+  const [rubric, setRubric] = useState("general");
+  const [includePost, setIncludePost] = useState(true);
+  const [includeReels, setIncludeReels] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [voiceText, setVoiceText] = useState("");
 
@@ -592,6 +598,73 @@ export default function ContentGenerator() {
                       <div style={{ fontSize: 13, marginTop: 6, color: "var(--brand-platinum)" }}>
                         {validate.data.wordCount} слов
                       </div>
+                      {copiedId === "post" ? (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Скопировано!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4 mr-2" />
+                          Скопировать пост
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const postTitle = title;
+                        const newTopic = {
+                          id: Math.max(...allContentTopics.map((t: any) => t.id), 0) + 1,
+                          title: postTitle,
+                          reason: `Рубрика: ${rubric === "lifeHack" ? 'Лайфхак' : rubric === "overheardFromTrainer" ? 'Подслушано у тренера' : 'Общая'}`,
+                          interest: "Высокий",
+                          format: "Пост",
+                          potential: "Высокий",
+                        };
+                        allContentTopics.push(newTopic);
+                        alert(`Тема "${postTitle}" сохранена в План!`);
+                      }}
+                    >
+                      💾 Сохранить в План
+                    </Button>
+                    <Button
+                      className="w-full bg-blue-500 hover:bg-blue-600"
+                      onClick={handleSendPostToTelegram}
+                      disabled={((!generatePostMutation.data?.post && !generateFullContentMutation.data?.post) || sendPostToTelegramMutation.isPending)}
+                    >
+                      {sendPostToTelegramMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Отправляю...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Отправить в Telegram
+                        </>
+                      )}
+                    </Button>
+                    {sendPostToTelegramMutation.data && (
+                      <p className="text-sm text-green-600 text-center">✅ {sendPostToTelegramMutation.data.message}</p>
+                    )}
+                    {sendPostToTelegramMutation.error && (
+                      <p className="text-sm text-red-600 text-center">❌ {sendPostToTelegramMutation.error.message}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Reels Script Result */}
+            {(generateReelsScriptMutation.data || (generateFullContentMutation.data as any)?.reelsScript) && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Сценарий Reels</CardTitle>
+                      <CardDescription>Для Instagram</CardDescription>
                     </div>
                   </div>
                   {validate.data.passed ? (
