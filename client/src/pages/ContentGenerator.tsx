@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Copy, Check, Zap, Sparkles, Loader2, Send } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
+import { allContentTopics } from "@/lib/contentData";
 
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
@@ -328,6 +329,25 @@ export default function ContentGenerator() {
                           Скопировать пост
                         </>
                       )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const postTitle = title;
+                        const newTopic = {
+                          id: Math.max(...allContentTopics.map((t: any) => t.id), 0) + 1,
+                          title: postTitle,
+                          reason: `Рубрика: ${rubric === 'lifeHack' ? 'Лайфхак' : rubric === 'overheardFromTrainer' ? 'Подслушано у тренера' : 'Общая'}`,
+                          interest: "Высокий",
+                          format: "Пост",
+                          potential: "Высокий",
+                        };
+                        allContentTopics.push(newTopic);
+                        alert(`Тема "${postTitle}" сохранена в План!`);
+                      }}
+                    >
+                      💾 Сохранить в План
                     </Button>
                     <Button
                       className="w-full bg-blue-500 hover:bg-blue-600"
