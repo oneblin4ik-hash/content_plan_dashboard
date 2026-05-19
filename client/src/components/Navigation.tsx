@@ -1,9 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound } from "lucide-react";
+import { BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound, TrendingUp, Image as ImageIcon } from "lucide-react";
 
 const items = [
   { href: "/", label: "План", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
+  { href: "/trends", label: "Тренды", icon: TrendingUp },
+  { href: "/media", label: "Медиа", icon: ImageIcon },
   { href: "/library", label: "Библиотека", icon: Library },
   { href: "/calendar", label: "Календарь", icon: Calendar },
   { href: "/analytics", label: "Аналитика", icon: BarChart3 },

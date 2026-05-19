@@ -19,26 +19,34 @@ import { Streamdown } from "streamdown";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localLibrary, type Mode } from "@/lib/syncStorage";
 
+/* 8 тонов — синхронизировано с TONES в server/routers/content.ts */
 const TONE_OPTIONS = [
   { v: "expert", label: "Эксперт" },
   { v: "friend", label: "Друг" },
   { v: "provocative", label: "Провокатор" },
+  { v: "tough_champion", label: "Жёсткий чемпион" },
+  { v: "caring_mentor", label: "Заботливый наставник" },
+  { v: "ironic_humor", label: "Ироничный юмор" },
+  { v: "motivational_drive", label: "Мотивационный драйв" },
+  { v: "mythbuster", label: "Разоблачитель мифов" },
 ] as const;
+type Tone = (typeof TONE_OPTIONS)[number]["v"];
 
+/* 10 рубрик — синхронизировано с RUBRICS в server/routers/content.ts.
+   Подстановка структуры идёт на сервере, тут только лейблы. */
 const RUBRICS = [
   { v: "general", label: "Общая" },
   { v: "lifehack", label: "Лайфхак" },
-  { v: "overheard", label: "Подслушано у тренера" },
+  { v: "overheard", label: "🎙 Подслушано у тренера" },
+  { v: "case", label: "Кейс клиента" },
+  { v: "personal_story", label: "Личная история Эдуарда" },
+  { v: "myth_debunk", label: "Разбор мифа" },
+  { v: "checklist", label: "Чек-лист" },
+  { v: "before_after", label: "До / после" },
+  { v: "q_and_a", label: "Вопрос — ответ" },
+  { v: "science", label: "Научный разбор" },
 ] as const;
 type Rubric = (typeof RUBRICS)[number]["v"];
-
-const RUBRIC_PROMPT: Record<Rubric, string> = {
-  general: "",
-  lifehack:
-    " Оформи как полезный лайфхак: 1 конкретный приём, который читатель применит сегодня же.",
-  overheard:
-    ' Подача "подслушано у тренера": сценка от первого лица, прямые реплики клиентов в кавычках, без морали.',
-};
 
 const MODES: { v: Mode; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
   { v: "pack", label: "Полный пакет", icon: Layers, desc: "Пост + Reels + хуки + хештеги" },
@@ -62,7 +70,7 @@ const useTitleFromQuery = (set: (t: string) => void) => {
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState<Mode>("pack");
-  const [tone, setTone] = useState<"expert" | "friend" | "provocative">("expert");
+  const [tone, setTone] = useState<Tone>("expert");
   const [platform, setPlatform] = useState<"telegram" | "instagram">("instagram");
   const [length, setLength] = useState<"short" | "medium" | "long">("medium");
   const [duration, setDuration] = useState<"15-30s" | "30-60s">("15-30s");
@@ -82,6 +90,38 @@ export default function ContentGenerator() {
   const hooks = trpc.content.generateHooks.useMutation();
   const hashtags = trpc.content.generateHashtags.useMutation();
   const carousel = trpc.content.generateCarousel.useMutation();
+  const refine = trpc.content.refine.useMutation();
+
+  /* inline-редактор: текст, инструкция, локальная история версий */
+  const [refineInstruction, setRefineInstruction] = useState("");
+  const [refinedOverrides, setRefinedOverrides] = useState<Record<string, string>>({});
+  const [refineHistory, setRefineHistory] = useState<Record<string, string[]>>({});
+
+  const applyRefine = async (
+    key: "post" | "reels" | "carousel" | "hook" | "free",
+    original: string,
+  ) => {
+    if (!refineInstruction.trim() || refineInstruction.trim().length < 3) return;
+    const r = await refine.mutateAsync({
+      original,
+      instruction: refineInstruction.trim(),
+      kind: key,
+    });
+    setRefinedOverrides((s) => ({ ...s, [key]: r.refined }));
+    setRefineHistory((s) => ({
+      ...s,
+      [key]: [...(s[key] ?? []), original].slice(-5),
+    }));
+    setRefineInstruction("");
+  };
+
+  const undoRefine = (key: "post" | "reels" | "carousel" | "hook" | "free") => {
+    const stack = refineHistory[key] ?? [];
+    if (!stack.length) return;
+    const prev = stack[stack.length - 1];
+    setRefinedOverrides((s) => ({ ...s, [key]: prev }));
+    setRefineHistory((s) => ({ ...s, [key]: stack.slice(0, -1) }));
+  };
   const validate = trpc.content.validateVoice.useQuery(
     { text: voiceText || "placeholder text for validation rule check" },
     { enabled: voiceText.length >= 20 }
@@ -98,21 +138,21 @@ export default function ContentGenerator() {
     hashtags.isPending ||
     carousel.isPending;
 
-  const enrichedTitle = title + RUBRIC_PROMPT[rubric];
-
+  /* рубрика теперь применяется на сервере через input.rubric — не нужно
+     ничего вшивать в title */
   const handleGenerate = async () => {
     if (!title.trim() || title.trim().length < 5) return;
-    if (mode === "pack") await pack.mutateAsync({ title: enrichedTitle, platform });
+    if (mode === "pack")
+      await pack.mutateAsync({ title, platform, tone, rubric });
     else if (mode === "post")
-      await post.mutateAsync({ title: enrichedTitle, tone, platform, length });
-    else if (mode === "reels")
-      await reels.mutateAsync({ title: enrichedTitle, duration });
+      await post.mutateAsync({ title, tone, platform, length, rubric });
+    else if (mode === "reels") await reels.mutateAsync({ title, duration });
     else if (mode === "hooks")
-      await hooks.mutateAsync({ title: enrichedTitle, count: hookCount });
+      await hooks.mutateAsync({ title, count: hookCount });
     else if (mode === "hashtags")
-      await hashtags.mutateAsync({ title: enrichedTitle, platform });
+      await hashtags.mutateAsync({ title, platform });
     else if (mode === "carousel")
-      await carousel.mutateAsync({ title: enrichedTitle, slides });
+      await carousel.mutateAsync({ title, slides });
   };
 
   const handleCopy = (text: string, id: string) => {
@@ -274,25 +314,25 @@ export default function ContentGenerator() {
                   onChange={(v) => setPlatform(v as "instagram" | "telegram")}
                 />
               )}
+              {(mode === "post" || mode === "pack") && (
+                <Selector
+                  label="Тон"
+                  value={tone}
+                  options={TONE_OPTIONS.map((t) => ({ v: t.v, label: t.label }))}
+                  onChange={(v) => setTone(v as Tone)}
+                />
+              )}
               {mode === "post" && (
-                <>
-                  <Selector
-                    label="Тон"
-                    value={tone}
-                    options={TONE_OPTIONS.map((t) => ({ v: t.v, label: t.label }))}
-                    onChange={(v) => setTone(v as typeof tone)}
-                  />
-                  <Selector
-                    label="Длина"
-                    value={length}
-                    options={[
-                      { v: "short", label: "Короткий (~250 слов)" },
-                      { v: "medium", label: "Средний (~400 слов)" },
-                      { v: "long", label: "Длинный (~800 слов)" },
-                    ]}
-                    onChange={(v) => setLength(v as typeof length)}
-                  />
-                </>
+                <Selector
+                  label="Длина"
+                  value={length}
+                  options={[
+                    { v: "short", label: "Короткий (~250 слов)" },
+                    { v: "medium", label: "Средний (~400 слов)" },
+                    { v: "long", label: "Длинный (~800 слов)" },
+                  ]}
+                  onChange={(v) => setLength(v as typeof length)}
+                />
               )}
               {mode === "reels" && (
                 <Selector
@@ -414,26 +454,29 @@ export default function ContentGenerator() {
           {mode === "post" && post.data && (
             <ResultCard
               title="Готовый пост"
-              text={post.data.post}
+              text={refinedOverrides.post ?? post.data.post}
               copyId="post"
               copiedId={copiedId}
               onCopy={handleCopy}
               onSend={() =>
-                sendPostTG.mutate({ title: post.data!.title, content: post.data!.post })
+                sendPostTG.mutate({
+                  title: post.data!.title,
+                  content: refinedOverrides.post ?? post.data!.post,
+                })
               }
             />
           )}
           {mode === "reels" && reels.data && (
             <ResultCard
               title="Сценарий Reels"
-              text={reels.data.script}
+              text={refinedOverrides.reels ?? reels.data.script}
               copyId="reels"
               copiedId={copiedId}
               onCopy={handleCopy}
               onSend={() =>
                 sendReelsTG.mutate({
                   title: reels.data!.title,
-                  script: reels.data!.script,
+                  script: refinedOverrides.reels ?? reels.data!.script,
                 })
               }
             />
@@ -536,12 +579,139 @@ export default function ContentGenerator() {
           {mode === "carousel" && carousel.data && (
             <ResultCard
               title={`Карусель · ${carousel.data.slides} слайдов`}
-              text={carousel.data.carousel}
+              text={refinedOverrides.carousel ?? carousel.data.carousel}
               copyId="carousel"
               copiedId={copiedId}
               onCopy={handleCopy}
             />
           )}
+
+          {/* INLINE REFINE — появляется после готовой генерации post/reels/carousel */}
+          {(post.data || reels.data || carousel.data) &&
+            (mode === "post" || mode === "reels" || mode === "carousel") && (
+              <div
+                className="bento-card"
+                style={{ padding: 24, marginTop: 16 }}
+              >
+                <div className="eyebrow" style={{ marginBottom: 10 }}>
+                  Доработать
+                </div>
+                <p
+                  className="text-platinum"
+                  style={{ fontSize: 14, marginBottom: 14 }}
+                >
+                  Напиши, что поправить — Эдуард отредактирует точечно, не
+                  переписывая всё заново. До 5 версий в истории.
+                </p>
+                <textarea
+                  value={refineInstruction}
+                  onChange={(e) => setRefineInstruction(e.target.value)}
+                  placeholder="Например: «Сократи на треть и добавь провокацию в хук»"
+                  rows={2}
+                  style={{
+                    background: "var(--ink-3)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 14,
+                    padding: 12,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 14,
+                    width: "100%",
+                    resize: "vertical",
+                  }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                  <button
+                    onClick={() => {
+                      const text =
+                        mode === "post"
+                          ? refinedOverrides.post ?? post.data?.post ?? ""
+                          : mode === "reels"
+                            ? refinedOverrides.reels ?? reels.data?.script ?? ""
+                            : refinedOverrides.carousel ??
+                              carousel.data?.carousel ??
+                              "";
+                      const kind: "post" | "reels" | "carousel" =
+                        mode === "post"
+                          ? "post"
+                          : mode === "reels"
+                            ? "reels"
+                            : "carousel";
+                      applyRefine(kind, text);
+                    }}
+                    disabled={
+                      refine.isPending || refineInstruction.trim().length < 3
+                    }
+                    className="btn-gold"
+                    style={{ padding: "10px 20px", fontSize: 14 }}
+                  >
+                    {refine.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Правлю...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4" /> Доработать
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const kind: "post" | "reels" | "carousel" =
+                        mode === "post"
+                          ? "post"
+                          : mode === "reels"
+                            ? "reels"
+                            : "carousel";
+                      undoRefine(kind);
+                    }}
+                    disabled={
+                      (refineHistory[
+                        mode === "post"
+                          ? "post"
+                          : mode === "reels"
+                            ? "reels"
+                            : "carousel"
+                      ]?.length ?? 0) === 0
+                    }
+                    className="btn-gold"
+                    style={{
+                      background: "var(--ink-2)",
+                      color: "#fff",
+                      padding: "10px 20px",
+                      fontSize: 14,
+                    }}
+                  >
+                    Откатить
+                  </button>
+                  {refinedOverrides[
+                    mode === "post"
+                      ? "post"
+                      : mode === "reels"
+                        ? "reels"
+                        : "carousel"
+                  ] && (
+                    <span
+                      className="text-platinum"
+                      style={{
+                        fontSize: 12,
+                        alignSelf: "center",
+                        opacity: 0.7,
+                      }}
+                    >
+                      Версий в истории:{" "}
+                      {refineHistory[
+                        mode === "post"
+                          ? "post"
+                          : mode === "reels"
+                            ? "reels"
+                            : "carousel"
+                      ]?.length ?? 0}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
         </div>
       </section>
 

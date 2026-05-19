@@ -13,6 +13,11 @@ not_found_handling = "single-page-application"
 NODE_ENV = "production"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
+# Раз в сутки в 06:00 UTC (≈ 09:00 МСК) — парсим публичные TG-каналы
+# конкурентов и обновляем банк трендов в D1.
+[triggers]
+crons = ["0 6 * * *"]
+
 # D1 binding — kept for future direct-binding migration. Today we use the
 # REST API via CLOUDFLARE_* secrets, so the binding is informational only.
 [[d1_databases]]

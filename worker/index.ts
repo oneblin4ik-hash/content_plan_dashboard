@@ -1,5 +1,6 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./router";
+import { runTrendsRefresh } from "../server/routers/trends";
 
 type Env = {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
@@ -52,5 +53,20 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(
+    _event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    syncProcessEnv(env);
+    /* Раз в сутки обновляем тренды конкурентов. Если что-то упало —
+       залогируем, но не падаем (cron не должен ронять worker). */
+    ctx.waitUntil(
+      runTrendsRefresh().catch((err) => {
+        console.error("[cron trends.refresh] failed", err);
+      }),
+    );
   },
 };

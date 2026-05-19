@@ -14,13 +14,90 @@ import { SERBOLIN_SYSTEM_PROMPT as SERBOLIN_SYSTEM } from "../_core/brand-knowle
    edit that file — not the prompts below.
    ============================================================ */
 
-const formatBlock = (tone: string) => {
-  if (tone === "expert")
-    return "экспертный, авторитетный, со ссылками на физиологию и опыт зала";
-  if (tone === "friend")
-    return "дружеский, эмпатичный, как с подругой за чашкой кофе";
-  return "провокационный, цепляющий на эмоциях — но без жёлтых заголовков";
+/* 8 тонов голоса — все совместимы с брендом Mr. Serbolin.
+   Если добавляешь новый — синхронизируй с TONE_OPTIONS в
+   client/src/pages/ContentGenerator.tsx. */
+export const TONES = [
+  "expert", "friend", "provocative",
+  "tough_champion", "caring_mentor", "ironic_humor",
+  "motivational_drive", "mythbuster",
+] as const;
+type Tone = typeof TONES[number];
+
+const TONE_DESCRIPTIONS: Record<Tone, string> = {
+  expert: "экспертный, авторитетный, с опорой на физиологию и опыт зала",
+  friend: "дружеский, эмпатичный, как с подругой за чашкой кофе",
+  provocative: "провокационный, цепляющий на эмоциях — но без жёлтых заголовков",
+  tough_champion:
+    "жёсткий чемпион: прямота, минимум сантиментов, выкладываешь как есть, " +
+    "лёгкая колкость по лени и отговоркам — но без агрессии в адрес читателя",
+  caring_mentor:
+    "заботливый наставник: тёплый, поддерживающий тон, признаёшь сложность, " +
+    "даёшь маленькие шаги, человек чувствует себя на твоей стороне",
+  ironic_humor:
+    "ироничный юмор: стёб, парадоксы, лёгкая самоирония Эдуарда, " +
+    "разоблачение через смех, без сарказма в адрес читателя",
+  motivational_drive:
+    "мотивационный драйв: энергия, короткие рубленые фразы, призыв к действию " +
+    "прямо сейчас — но через конкретный шаг, не через лозунги",
+  mythbuster:
+    "разоблачитель мифов: спокойно и с фактами объясняешь почему " +
+    "общепринятое неверно, ссылки на физиологию и собственный опыт",
 };
+
+const formatBlock = (tone: string) =>
+  TONE_DESCRIPTIONS[tone as Tone] ?? TONE_DESCRIPTIONS.expert;
+
+/* 10 рубрик — задают структуру поста и подачу.
+   Применяются и к режиму post, и к pack. */
+export const RUBRICS = [
+  "general", "lifehack", "overheard",
+  "case", "personal_story", "myth_debunk",
+  "checklist", "before_after", "q_and_a", "science",
+] as const;
+type Rubric = typeof RUBRICS[number];
+
+const RUBRIC_BLUEPRINTS: Record<Rubric, string> = {
+  general: "",
+  lifehack:
+    "ФОРМАТ: лайфхак. Один конкретный приём, который читатель применит " +
+    "сегодня же. Без длинной теории, сразу «вот что делаешь».",
+  overheard:
+    "ФОРМАТ: рубрика «🎙 ПОДСЛУШАНО У ТРЕНЕРА». Начни с прямой реплики " +
+    "клиента в кавычках (это должна быть типовая фраза, без реальных " +
+    "имён). Дальше — реакция Эдуарда от первого лица. Без морали в финале.",
+  case:
+    "ФОРМАТ: кейс. Структура: краткая ситуация «до» (обобщённый клиент, " +
+    "без реального имени) → что меняли по системе (3 шага с 🤝) → " +
+    "реалистичный результат с диапазоном цифр → один урок-вывод для " +
+    "читателя.",
+  personal_story:
+    "ФОРМАТ: личная история Эдуарда. Эпизод из жизни (зал, спорт, " +
+    "карьера) → инсайт → как это применимо к читателю. Уместен геймерский " +
+    "слой (задрот-геймер, прокачка персонажа) — он часть бренда.",
+  myth_debunk:
+    "ФОРМАТ: разбор мифа. 1) распространённое заблуждение (в кавычках), " +
+    "2) почему это бред и откуда взялось, 3) что на самом деле, " +
+    "4) что делать вместо этого. Спокойно, без снобизма.",
+  checklist:
+    "ФОРМАТ: чек-лист. 5–7 пунктов с маркером 🤝, каждый в одну фразу. " +
+    "В шапке — для кого это и зачем. В конце — какие пункты приоритетные.",
+  before_after:
+    "ФОРМАТ: до/после. Опиши «до» (типовая ситуация, обобщённый клиент) " +
+    "→ что изменили → как теперь. Цифры — реалистичный диапазон, не " +
+    "вау-кейс. Подходит для постов с фото или клиентского трансформа.",
+  q_and_a:
+    "ФОРМАТ: вопрос-ответ. Начало — короткий типовой вопрос аудитории " +
+    "(2–3 строки). Дальше — ответ Эдуарда: разбор + 1–2 конкретных шага. " +
+    "Никакого «отличный вопрос» — сразу к делу.",
+  science:
+    "ФОРМАТ: научный разбор. Простой язык, опора на физиологию или " +
+    "конкретное исследование. Если ссылаешься на «свежие исследования» — " +
+    "указывай год и направление, а не выдумывай конкретные проценты.",
+};
+
+const buildRubricBlock = (rubric: string) =>
+  RUBRIC_BLUEPRINTS[rubric as Rubric] ?? "";
 
 const callLLM = async (system: string, user: string) => {
   const r = await invokeLLM({
@@ -41,9 +118,10 @@ export const contentRouter = router({
     .input(
       z.object({
         title: z.string().min(5, "Заголовок минимум 5 символов"),
-        tone: z.enum(["expert", "friend", "provocative"]).default("expert"),
+        tone: z.enum(TONES).default("expert"),
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
         length: z.enum(["short", "medium", "long"]).default("medium"),
+        rubric: z.enum(RUBRICS).default("general"),
       })
     )
     .mutation(async ({ input }) => {
@@ -54,12 +132,13 @@ export const contentRouter = router({
             ? "600–900 слов"
             : "350–500 слов";
 
+      const rubricBlock = buildRubricBlock(input.rubric);
       const system = `${SERBOLIN_SYSTEM}
 
 Текущая задача: ${formatBlock(input.tone)} пост для ${
         input.platform === "telegram" ? "Telegram" : "Instagram"
       }.
-Сегмент аудитории по умолчанию — женщины 25–45 (если в теме явно не указан
+${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по умолчанию — женщины 25–45 (если в теме явно не указан
 другой сегмент, например IT-предприниматель или мужчина 30+).`;
 
       const user = `Напиши готовый пост на тему: «${input.title}».
@@ -85,6 +164,7 @@ export const contentRouter = router({
         platform: input.platform,
         tone: input.tone,
         length: input.length,
+        rubric: input.rubric,
       };
     }),
 
@@ -268,18 +348,69 @@ H. Ожидание vs реальность («Думала, нужен час �
       };
     }),
 
+  /* ---------- REFINE — итеративная правка готового текста ---------- */
+  refine: publicProcedure
+    .input(
+      z.object({
+        original: z.string().min(20, "Слишком короткий исходный текст"),
+        instruction: z.string().min(3, "Опиши, что поправить"),
+        kind: z
+          .enum(["post", "reels", "carousel", "hook", "free"])
+          .default("free"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const kindHint =
+        input.kind === "reels"
+          ? "Это сценарий Reels — сохрани таймкоды и разделы (ХУК/ТЕЛО/ТРИГГЕР/CTA/КАДРЫ)."
+          : input.kind === "carousel"
+            ? "Это карусель — сохрани разбивку на слайды, заголовки и количество слайдов."
+            : input.kind === "hook"
+              ? "Это набор хуков по одному в строке — сохрани формат строк."
+              : input.kind === "post"
+                ? "Это пост — сохрани общую структуру и подачу, правь точечно."
+                : "";
+
+      const system = `${SERBOLIN_SYSTEM}
+
+Текущая задача: точечная правка готового текста по инструкции пользователя.
+ВАЖНО:
+- Меняй ТОЛЬКО то, что просит инструкция. Не переписывай заново.
+- Сохраняй бренд-голос Эдуарда даже если инструкция этого не требует.
+- ${kindHint || "Сохрани общий формат и тип контента."}
+- Не добавляй преамбулы «Вот доработанная версия:» — выдай только готовый текст.`;
+
+      const user = `ИСХОДНЫЙ ТЕКСТ:
+"""
+${input.original}
+"""
+
+ИНСТРУКЦИЯ ПО ПРАВКЕ:
+${input.instruction}
+
+Выдай только финальный отредактированный текст.`;
+
+      const refined = await callLLM(system, user);
+      return { refined, kind: input.kind };
+    }),
+
   /* ---------- FULL PACK — пост + reels + хуки + хештеги одной кнопкой ---------- */
   generateFullPack: publicProcedure
     .input(
       z.object({
         title: z.string().min(5),
         platform: z.enum(["telegram", "instagram"]).default("instagram"),
+        tone: z.enum(TONES).default("expert"),
+        rubric: z.enum(RUBRICS).default("general"),
       })
     )
     .mutation(async ({ input }) => {
+      const rubricBlock = buildRubricBlock(input.rubric);
       const system = `${SERBOLIN_SYSTEM}
 
-Текущая задача: целый пакет контента вокруг одной темы.`;
+Текущая задача: целый пакет контента вокруг одной темы.
+Тон поста: ${formatBlock(input.tone)}.
+${rubricBlock ? rubricBlock + "\n" : ""}`;
 
       const user = `Тема: «${input.title}».
 Платформа: ${input.platform}.

@@ -11,6 +11,8 @@ import ContentGenerator from "./pages/ContentGenerator";
 import Library from "./pages/Library";
 import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
+import Trends from "./pages/Trends";
+import Media from "./pages/Media";
 import Navigation from "./components/Navigation";
 
 function Router() {
@@ -18,6 +20,8 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Dashboard} />
       <Route path="/generator" component={ContentGenerator} />
+      <Route path="/trends" component={Trends} />
+      <Route path="/media" component={Media} />
       <Route path="/library" component={Library} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/analytics" component={Analytics} />

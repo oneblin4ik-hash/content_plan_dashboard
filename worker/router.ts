@@ -3,12 +3,16 @@ import { systemRouter } from "../server/_core/systemRouter";
 import { contentRouter } from "../server/routers/content";
 import { telegramRouter } from "../server/routers/telegram";
 import { syncRouter } from "../server/routers/sync";
+import { trendsRouter } from "../server/routers/trends";
+import { mediaRouter } from "../server/routers/media";
 
 export const appRouter = router({
   system: systemRouter,
   content: contentRouter,
   telegram: telegramRouter,
   sync: syncRouter,
+  trends: trendsRouter,
+  media: mediaRouter,
   auth: router({
     me: publicProcedure.query(() => null),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),
