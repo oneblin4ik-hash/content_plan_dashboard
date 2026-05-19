@@ -19,7 +19,15 @@ const previewOf = (item: LibraryItem): string => {
   if (typeof p.post === "string") return p.post as string;
   if (typeof p.script === "string") return p.script as string;
   if (typeof p.carousel === "string") return p.carousel as string;
-  if (Array.isArray(p.hooks)) return (p.hooks as string[]).join("\n");
+  if (Array.isArray(p.hooks)) {
+    /* После #6 элементы хуков могут быть либо строками (старый формат
+       в pack.data), либо {text, score, pattern, reason} (новый формат
+       hooks-mode). Поддерживаем оба. */
+    return (p.hooks as Array<string | { text?: string }>)
+      .map((h) => (typeof h === "string" ? h : (h?.text ?? "")))
+      .filter(Boolean)
+      .join("\n");
+  }
   if (Array.isArray(p.hashtags)) return (p.hashtags as string[]).join(" ");
   return JSON.stringify(p, null, 2);
 };

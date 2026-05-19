@@ -484,50 +484,116 @@ export default function ContentGenerator() {
           {mode === "hooks" && hooks.data && (
             <div className="bento-card" style={{ padding: 28 }}>
               <div className="eyebrow" style={{ marginBottom: 14 }}>
-                Хуки · {hooks.data.hooks.length} вариантов
+                Хуки · {hooks.data.hooks.length} вариантов · отсортированы
+                по predicted engagement
               </div>
               <div className="grid gap-2">
-                {hooks.data.hooks.map((h, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: "14px 18px",
-                      background: "var(--ink-3)",
-                      borderRadius: 14,
-                      display: "flex",
-                      gap: 14,
-                      alignItems: "center",
-                    }}
-                  >
+                {hooks.data.hooks.map((h, i) => {
+                  const scoreColor =
+                    h.score >= 9
+                      ? "#3ecf8e"
+                      : h.score >= 7
+                        ? "var(--brand-gold)"
+                        : h.score >= 5
+                          ? "#c9a35a"
+                          : "#a07474";
+                  return (
                     <div
+                      key={i}
                       style={{
-                        fontFamily: "var(--font-display)",
-                        fontSize: 22,
-                        fontWeight: 700,
-                        color: "var(--brand-gold)",
-                        minWidth: 30,
+                        padding: "14px 18px",
+                        background: "var(--ink-3)",
+                        borderRadius: 14,
+                        display: "flex",
+                        gap: 14,
+                        alignItems: "flex-start",
                       }}
                     >
-                      {i + 1}
+                      <div
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontSize: 28,
+                          fontWeight: 700,
+                          color: scoreColor,
+                          minWidth: 52,
+                          textAlign: "center",
+                          lineHeight: 1,
+                          paddingTop: 2,
+                        }}
+                        title={`Predicted engagement: ${h.score}/10`}
+                      >
+                        {h.score}
+                        <div
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 500,
+                            color: "var(--brand-platinum)",
+                            opacity: 0.6,
+                            marginTop: 2,
+                            letterSpacing: "0.5px",
+                          }}
+                        >
+                          / 10
+                        </div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 15, lineHeight: 1.4 }}>
+                          {h.text}
+                        </p>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginTop: 6,
+                            alignItems: "center",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              background: "var(--gold-soft-fill)",
+                              color: "var(--brand-gold)",
+                              borderRadius: 9999,
+                              fontWeight: 600,
+                            }}
+                          >
+                            Паттерн {h.pattern}
+                          </span>
+                          <span
+                            className="text-platinum"
+                            style={{
+                              fontSize: 12,
+                              opacity: 0.7,
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {h.reason}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleCopy(h.text, `hook-${i}`)}
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: "var(--brand-platinum)",
+                          cursor: "pointer",
+                          padding: 4,
+                          alignSelf: "center",
+                        }}
+                        title="Скопировать"
+                      >
+                        {copiedId === `hook-${i}` ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </button>
                     </div>
-                    <p style={{ flex: 1, fontSize: 15, lineHeight: 1.4 }}>{h}</p>
-                    <button
-                      onClick={() => handleCopy(h, `hook-${i}`)}
-                      style={{
-                        background: "transparent",
-                        border: 0,
-                        color: "var(--brand-platinum)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {copiedId === `hook-${i}` ? (
-                        <Check className="w-4 h-4" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

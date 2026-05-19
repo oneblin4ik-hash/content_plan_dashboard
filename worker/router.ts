@@ -5,6 +5,7 @@ import { telegramRouter } from "../server/routers/telegram";
 import { syncRouter } from "../server/routers/sync";
 import { trendsRouter } from "../server/routers/trends";
 import { mediaRouter } from "../server/routers/media";
+import { metricsRouter } from "../server/routers/metrics";
 
 export const appRouter = router({
   system: systemRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   sync: syncRouter,
   trends: trendsRouter,
   media: mediaRouter,
+  metrics: metricsRouter,
   auth: router({
     me: publicProcedure.query(() => null),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),
