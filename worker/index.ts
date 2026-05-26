@@ -1,6 +1,10 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./router";
 import { runTrendsRefresh } from "../server/routers/trends";
+import {
+  handleTelegramWebhook,
+  handleTelegramSetup,
+} from "./telegram-webhook";
 
 type Env = {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
@@ -50,6 +54,14 @@ export default {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json" },
       });
+    }
+
+    if (url.pathname === "/api/telegram/webhook") {
+      return handleTelegramWebhook(request);
+    }
+
+    if (url.pathname === "/api/telegram/setup-webhook") {
+      return handleTelegramSetup(request);
     }
 
     return env.ASSETS.fetch(request);

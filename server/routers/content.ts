@@ -487,4 +487,106 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
         };
       }
     }),
+
+  /* ---------- MONTH PLAN — авто-план публикаций (idea #1) ---------- */
+  generateMonthPlan: publicProcedure
+    .input(
+      z.object({
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Формат YYYY-MM-DD"),
+        weeksCount: z.number().int().min(1).max(8).default(4),
+        postsPerWeek: z.number().int().min(1).max(7).default(3),
+        segment: z
+          .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
+          .default("mixed"),
+        platform: z.enum(["telegram", "instagram"]).default("telegram"),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const total = input.weeksCount * input.postsPerWeek;
+      const segmentHint =
+        input.segment === "women_25_45"
+          ? "Основная ЦА — женщины 25-45, домохозяйки и офисные сотрудницы. Боли: похудение, ягодицы, отёки, психология срывов, нет времени."
+          : input.segment === "men_30_45"
+            ? "Основная ЦА — мужчины 30-45, офис и предприниматели. Боли: сидячая работа, лишний вес, нет времени, не хотят заморачиваться с едой."
+            : input.segment === "ambitious_pro"
+              ? "Основная ЦА — амбициозные профи 30-45 с высоким чеком. Боли: плато, стресс, нужна логика и системность."
+              : "Смешанная ЦА — чередуй посты под разные сегменты.";
+
+      const system = `${SERBOLIN_SYSTEM}
+
+Текущая задача: построить контент-план на ${input.weeksCount} недель
+(${total} публикаций) для ${
+        input.platform === "telegram" ? "Telegram" : "Instagram"
+      }.
+
+ЦА: ${segmentHint}
+
+ПРИНЦИПЫ РАСПРЕДЕЛЕНИЯ (опирайся на анализ соцсетей из системного промпта):
+- ${input.postsPerWeek} публикаций в неделю. Распредели НЕРАВНОМЕРНО, как
+  в реальной жизни: больше во вторник-четверг-пятницу-воскресенье,
+  меньше в понедельник/субботу. Не клади всё подряд.
+- ЧЕРЕДУЙ ТИПЫ В НЕДЕЛЕ (из «ФОРМУЛ КОНТЕНТА» в системном промпте):
+  кейс / личное мнение-драйв / продажа через пользу. Не два кейса
+  подряд, не два мифоразбора подряд.
+- ЧЕРЕДУЙ РУБРИКИ: lifehack, overheard, case, personal_story,
+  myth_debunk, checklist, before_after, q_and_a, science.
+- ЧЕРЕДУЙ ТОНЫ: expert, friend, provocative, tough_champion,
+  caring_mentor, ironic_humor, motivational_drive, mythbuster. Не
+  больше двух одинаковых тонов в неделе.
+- Темы — конкретные («Челлендж СТОП ОТЁКИ за 7 дней»), а не общие
+  («про отёки»). Используй виральные паттерны из системного промпта.
+- Старт публикаций — со ${input.startDate}.`;
+
+      const user = `Сгенерируй ${total} публикаций. Выдай результат строго в
+JSON без markdown-обёртки:
+{
+  "items": [
+    {
+      "date": "YYYY-MM-DD",
+      "title": "конкретная тема, 5-10 слов",
+      "format": "post | reels | carousel | story",
+      "rubric": "general | lifehack | overheard | case | personal_story | myth_debunk | checklist | before_after | q_and_a | science",
+      "tone": "expert | friend | provocative | tough_champion | caring_mentor | ironic_humor | motivational_drive | mythbuster",
+      "why": "одна фраза, почему эта тема в этот день под эту ЦА"
+    }
+  ]
+}
+
+В items должно быть РОВНО ${total} элементов. Даты — корректные ISO-даты
+${input.weeksCount * 7} дней начиная с ${input.startDate}.`;
+
+      const raw = await callLLM(system, user);
+      const cleaned = raw
+        .replace(/^```(json)?/i, "")
+        .replace(/```$/i, "")
+        .trim();
+      type PlanItem = {
+        date: string;
+        title: string;
+        format: string;
+        rubric: string;
+        tone: string;
+        why: string;
+      };
+      let items: PlanItem[] = [];
+      try {
+        const parsed = JSON.parse(cleaned) as { items: PlanItem[] };
+        items = (parsed.items ?? [])
+          .filter(
+            (x) =>
+              typeof x.date === "string" &&
+              /^\d{4}-\d{2}-\d{2}$/.test(x.date) &&
+              typeof x.title === "string" &&
+              x.title.length > 2,
+          )
+          .slice(0, total);
+      } catch {
+        throw new Error(
+          `LLM не вернул валидный JSON. Сырой ответ: ${cleaned.slice(0, 300)}`,
+        );
+      }
+      return { items, total, startDate: input.startDate };
+    }),
 });

@@ -72,4 +72,9 @@ export const localCalendar = {
   remove(id: string) {
     this.save(this.load().filter((i) => i.id !== id));
   },
+  update(id: string, patch: Partial<ScheduledItem>) {
+    this.save(
+      this.load().map((i) => (i.id === id ? { ...i, ...patch } : i)),
+    );
+  },
 };

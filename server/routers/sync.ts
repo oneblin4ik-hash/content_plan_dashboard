@@ -169,6 +169,40 @@ export const syncRouter = router({
         );
         return { ok: true };
       }),
+
+    update: publicProcedure
+      .input(
+        z.object({
+          workspaceKey: wsKey,
+          id: z.string(),
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          title: z.string().min(1).optional(),
+          format: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const sets: string[] = [];
+        const params: (string | number | null)[] = [];
+        if (input.date !== undefined) {
+          sets.push("date = ?");
+          params.push(input.date);
+        }
+        if (input.title !== undefined) {
+          sets.push("title = ?");
+          params.push(input.title);
+        }
+        if (input.format !== undefined) {
+          sets.push("format = ?");
+          params.push(input.format ?? null);
+        }
+        if (sets.length === 0) return { ok: true };
+        params.push(input.workspaceKey, input.id);
+        await d1Execute(
+          `UPDATE scheduled SET ${sets.join(", ")} WHERE workspace_key = ? AND id = ?`,
+          params,
+        );
+        return { ok: true };
+      }),
   }),
 
   publishedState: router({

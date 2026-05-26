@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ChevronLeft, ChevronRight, Plus, Trash2, Sparkles, Cloud, CloudOff } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Trash2,
+  Sparkles,
+  Cloud,
+  CloudOff,
+  Wand2,
+  Loader2,
+} from "lucide-react";
 import { allContentTopics } from "@/lib/contentData";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
@@ -30,6 +40,25 @@ export default function Calendar() {
   });
   const cloudDelete = trpc.sync.scheduled.delete.useMutation({
     onSuccess: () => cloudList.refetch(),
+  });
+  const cloudUpdate = trpc.sync.scheduled.update.useMutation({
+    onSuccess: () => cloudList.refetch(),
+  });
+  const planMutation = trpc.content.generateMonthPlan.useMutation();
+
+  /* DnD state — храним id перетаскиваемой карточки, чтобы highlight'ить
+     дроп-зоны. Используем нативный HTML5 DnD, без библиотек. */
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+
+  /* Параметры авто-плана. */
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    weeksCount: 4,
+    postsPerWeek: 3,
+    segment: "mixed" as "women_25_45" | "men_30_45" | "ambitious_pro" | "mixed",
+    platform: "telegram" as "telegram" | "instagram",
+    startDate: fmtDate(today),
   });
 
   useEffect(() => {
@@ -68,6 +97,44 @@ export default function Calendar() {
       localCalendar.remove(id);
       setLocalItems(localCalendar.load());
     }
+  };
+
+  const moveItem = (id: string, newDate: string) => {
+    const it = items.find((x) => x.id === id);
+    if (!it || it.date === newDate) return;
+    if (cloudEnabled) {
+      cloudUpdate.mutate({ workspaceKey, id, date: newDate });
+    } else {
+      localCalendar.update(id, { date: newDate });
+      setLocalItems(localCalendar.load());
+    }
+  };
+
+  const runAutoplan = async () => {
+    if (!cloudEnabled) {
+      alert(
+        "Авто-план работает только с включённой синхронизацией: нужен workspace key, чтобы план был на всех устройствах. Открой Sync.",
+      );
+      return;
+    }
+    const plan = await planMutation.mutateAsync({
+      startDate: planForm.startDate,
+      weeksCount: planForm.weeksCount,
+      postsPerWeek: planForm.postsPerWeek,
+      segment: planForm.segment,
+      platform: planForm.platform,
+    });
+    /* Сохраняем последовательно — D1 REST не любит мегаконкаррентные
+       инсёрты на одну таблицу с маленького аккаунта. */
+    for (const it of plan.items) {
+      await cloudSave.mutateAsync({
+        workspaceKey,
+        date: it.date,
+        title: it.title,
+        format: it.format,
+      });
+    }
+    setPlanOpen(false);
   };
 
   const scheduleTopic = (topicId: number) => {
@@ -135,9 +202,140 @@ export default function Calendar() {
             className="text-platinum"
             style={{ maxWidth: 620, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
           >
-            Двигай темы из плана в конкретные дни. С тем же workspace-ключом
-            расписание видно на всех устройствах.
+            Двигай темы из плана в конкретные дни перетаскиванием. Кнопкой
+            ниже Gemini напишет план на несколько недель сразу — с темами,
+            рубриками и тонами под твою ЦА.
           </p>
+
+          <div style={{ marginTop: 22, display: "flex", flexWrap: "wrap", gap: 10 }}>
+            <button
+              onClick={() => setPlanOpen((v) => !v)}
+              className="btn-gold gold-glow"
+              style={{ padding: "12px 20px", fontSize: 14 }}
+            >
+              <Wand2 className="w-4 h-4" />
+              {planOpen ? "Скрыть параметры" : "Сгенерировать план"}
+            </button>
+            {planMutation.isPending && (
+              <span
+                className="text-platinum"
+                style={{ alignSelf: "center", fontSize: 13, opacity: 0.7 }}
+              >
+                <Loader2
+                  className="w-3.5 h-3.5 animate-spin"
+                  style={{ display: "inline", marginRight: 6 }}
+                />
+                Пишу план...
+              </span>
+            )}
+            {planMutation.error && (
+              <span
+                style={{
+                  alignSelf: "center",
+                  fontSize: 13,
+                  color: "#e25555",
+                  maxWidth: 480,
+                }}
+              >
+                {planMutation.error.message}
+              </span>
+            )}
+          </div>
+
+          {planOpen && (
+            <div
+              className="bento-card"
+              style={{
+                padding: 20,
+                marginTop: 16,
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              }}
+            >
+              <label style={{ display: "block" }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>С какой даты</div>
+                <input
+                  type="date"
+                  value={planForm.startDate}
+                  onChange={(e) => setPlanForm({ ...planForm, startDate: e.target.value })}
+                  style={planInputStyle}
+                />
+              </label>
+              <label style={{ display: "block" }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Недель</div>
+                <select
+                  value={planForm.weeksCount}
+                  onChange={(e) => setPlanForm({ ...planForm, weeksCount: Number(e.target.value) })}
+                  style={planInputStyle}
+                >
+                  {[1, 2, 3, 4, 5, 6, 8].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "block" }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Постов в неделю</div>
+                <select
+                  value={planForm.postsPerWeek}
+                  onChange={(e) => setPlanForm({ ...planForm, postsPerWeek: Number(e.target.value) })}
+                  style={planInputStyle}
+                >
+                  {[2, 3, 4, 5, 6, 7].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "block" }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Сегмент ЦА</div>
+                <select
+                  value={planForm.segment}
+                  onChange={(e) =>
+                    setPlanForm({ ...planForm, segment: e.target.value as typeof planForm.segment })
+                  }
+                  style={planInputStyle}
+                >
+                  <option value="mixed">Смешанная</option>
+                  <option value="women_25_45">Женщины 25-45</option>
+                  <option value="men_30_45">Мужчины 30-45</option>
+                  <option value="ambitious_pro">Амбициозные профи</option>
+                </select>
+              </label>
+              <label style={{ display: "block" }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>Платформа</div>
+                <select
+                  value={planForm.platform}
+                  onChange={(e) =>
+                    setPlanForm({ ...planForm, platform: e.target.value as typeof planForm.platform })
+                  }
+                  style={planInputStyle}
+                >
+                  <option value="telegram">Telegram</option>
+                  <option value="instagram">Instagram</option>
+                </select>
+              </label>
+              <div style={{ display: "flex", alignItems: "flex-end" }}>
+                <button
+                  onClick={runAutoplan}
+                  disabled={planMutation.isPending || cloudSave.isPending}
+                  className="btn-gold"
+                  style={{ width: "100%", padding: "10px 16px" }}
+                >
+                  {planMutation.isPending || cloudSave.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Создаю {planForm.weeksCount * planForm.postsPerWeek}...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Заполнить {planForm.weeksCount * planForm.postsPerWeek} публикаций
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -170,14 +368,41 @@ export default function Calendar() {
                 const cellItems = itemsForDate(dateStr);
                 const isToday = dateStr === fmtDate(today);
                 const isSelected = dateStr === selected;
+                const isDropTarget = dragOverDate === dateStr && draggingId;
                 return (
-                  <button
+                  <div
                     key={i}
                     onClick={() => setSelected(dateStr)}
+                    onDragOver={(e) => {
+                      if (draggingId) {
+                        e.preventDefault();
+                        setDragOverDate(dateStr);
+                      }
+                    }}
+                    onDragLeave={() =>
+                      setDragOverDate((cur) =>
+                        cur === dateStr ? null : cur,
+                      )
+                    }
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const id = e.dataTransfer.getData("text/plain");
+                      if (id) moveItem(id, dateStr);
+                      setDraggingId(null);
+                      setDragOverDate(null);
+                    }}
                     style={{
-                      background: isSelected ? "var(--brand-gold)" : "var(--ink-3)",
+                      background: isDropTarget
+                        ? "rgba(212,168,67,0.35)"
+                        : isSelected
+                          ? "var(--brand-gold)"
+                          : "var(--ink-3)",
                       color: isSelected ? "var(--ink)" : "#fff",
-                      border: isToday ? "1px solid var(--brand-gold)" : "1px solid transparent",
+                      border: isDropTarget
+                        ? "2px dashed var(--brand-gold)"
+                        : isToday
+                          ? "1px solid var(--brand-gold)"
+                          : "1px solid transparent",
                       borderRadius: 14,
                       padding: 10,
                       minHeight: 80,
@@ -186,19 +411,39 @@ export default function Calendar() {
                       alignItems: "flex-start",
                       gap: 4,
                       cursor: "pointer",
-                      transition: "background .2s",
+                      transition: "background .15s, border-color .15s",
                     }}
                   >
-                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16 }}>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontWeight: 700,
+                        fontSize: 16,
+                      }}
+                    >
                       {d.getDate()}
                     </span>
                     {cellItems.slice(0, 2).map((it) => (
                       <span
                         key={it.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          e.dataTransfer.setData("text/plain", it.id);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggingId(it.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingId(null);
+                          setDragOverDate(null);
+                        }}
+                        title={it.title + " · потащи в другой день"}
                         style={{
                           fontSize: 10,
                           lineHeight: 1.3,
-                          background: isSelected ? "rgba(34,34,34,0.18)" : "rgba(212,168,67,0.18)",
+                          background: isSelected
+                            ? "rgba(34,34,34,0.18)"
+                            : "rgba(212,168,67,0.18)",
                           color: isSelected ? "var(--ink)" : "var(--brand-gold)",
                           borderRadius: 6,
                           padding: "2px 5px",
@@ -208,17 +453,26 @@ export default function Calendar() {
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                           fontWeight: 600,
+                          cursor: "grab",
+                          opacity: draggingId === it.id ? 0.4 : 1,
                         }}
                       >
                         {it.title}
                       </span>
                     ))}
                     {cellItems.length > 2 && (
-                      <span style={{ fontSize: 10, color: isSelected ? "rgba(34,34,34,0.6)" : "var(--muted-foreground)" }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: isSelected
+                            ? "rgba(34,34,34,0.6)"
+                            : "var(--muted-foreground)",
+                        }}
+                      >
                         +{cellItems.length - 2} ещё
                       </span>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -292,3 +546,14 @@ export default function Calendar() {
     </div>
   );
 }
+
+const planInputStyle: React.CSSProperties = {
+  background: "var(--ink-3)",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 12,
+  padding: "8px 12px",
+  fontSize: 13,
+  fontFamily: "var(--font-body)",
+  width: "100%",
+};
