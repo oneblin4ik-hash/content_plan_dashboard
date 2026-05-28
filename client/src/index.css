@@ -317,4 +317,88 @@
     background: rgba(255, 255, 255, 0.12);
     border-radius: 9999px;
   }
+
+  /* Горизонтальный скролл-стрип для табов и нав-пунктов — фирменный
+     паттерн iOS-приложений. Снимает overflow и держит крупные тапы. */
+  .scroll-strip {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-left: -12px;
+    margin-right: -12px;
+  }
+  .scroll-strip::-webkit-scrollbar { display: none; }
+  .scroll-strip > * { scroll-snap-align: start; }
+
+  /* Базовая safe-area подкладка для нижней навигации (на iPhone
+     с домашним индикатором). */
+  .safe-bottom {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+/* ============================================================
+   iPhone-оптимизация — единый слой брейкпоинтов.
+   Точка отсечения 768px (iPad portrait и младше).
+   ============================================================ */
+@media (max-width: 767px) {
+  /* Секционные паддинги ужимаем — на 375px 56/96px выглядят пустыми. */
+  section[style*="padding: 56px 0 16px"],
+  section[style*="padding: 56px 0"] {
+    padding: 24px 0 8px !important;
+  }
+  section[style*="padding: 24px 0 96px"],
+  section[style*="padding: 16px 0 96px"] {
+    padding: 12px 0 calc(80px + env(safe-area-inset-bottom)) !important;
+  }
+  section[style*="padding: 24px 0 64px"] {
+    padding: 12px 0 calc(80px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Заголовки — не больше 30px чтобы не пожирали экран. */
+  h1 { font-size: clamp(26px, 7vw, 32px) !important; }
+  h2 { font-size: clamp(20px, 5.5vw, 26px) !important; }
+
+  /* Bento card paddings — поплотнее, но читаемо. */
+  .bento-card { padding: 16px !important; border-radius: 16px !important; }
+
+  /* Любые auto-fill / auto-fit minmax-сетки ломаются на 375px viewport
+     если minmax > ширины колонки. Принудительно одна колонка. */
+  [style*="repeat(auto-fill"],
+  [style*="repeat(auto-fit"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Жёсткие N-колонные раскладки тоже схлопываем. */
+  [style*="repeat(4, 1fr)"],
+  [style*="repeat(3, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Двухколонные раскладки (например /integrations) — в одну. */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: minmax(0, 2fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hide длинных подписей в инфо-блоках слайдеров и т.п. */
+  .equation { display: none !important; }
+}
+
+/* Глобальные правила, которые помогают на любом тач-устройстве. */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+/* Минимум 16px у инпутов — иначе iOS Safari масштабирует страницу
+   при фокусе. */
+input, textarea, select {
+  font-size: 16px;
+}
+@media (min-width: 768px) {
+  input, textarea, select { font-size: 14px; }
 }
