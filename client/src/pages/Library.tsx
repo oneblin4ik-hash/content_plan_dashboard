@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Library as LibIcon, Copy, Check, Trash2, Sparkles, Cloud, CloudOff } from "lucide-react";
+import { Library as LibIcon, Copy, Check, Trash2, Sparkles, Cloud, CloudOff, CalendarPlus } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
-import { localLibrary, type LibraryItem, type Mode } from "@/lib/syncStorage";
+import { localLibrary, localCalendar, type LibraryItem, type Mode } from "@/lib/syncStorage";
 
 const MODE_LABEL: Record<Mode, string> = {
   pack: "Пакет",
@@ -48,6 +49,40 @@ export default function Library() {
   const cloudClear = trpc.sync.library.clear.useMutation({
     onSuccess: () => cloudList.refetch(),
   });
+  const cloudSchedule = trpc.sync.scheduled.save.useMutation();
+
+  const addToPlan = (item: LibraryItem) => {
+    /* Идея #2: ставим в календарь на завтра по умолчанию,
+       формат подтягиваем из mode. Пользователь дальше двигает DnD. */
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const date = tomorrow.toISOString().slice(0, 10);
+    const format =
+      item.mode === "reels"
+        ? "Reels"
+        : item.mode === "carousel"
+          ? "Карусель"
+          : item.mode === "hooks"
+            ? "Хуки"
+            : "Пост";
+    if (cloudEnabled) {
+      cloudSchedule.mutate(
+        { workspaceKey, date, title: item.title, format },
+        {
+          onSuccess: () => toast.success(`В план на ${date}`),
+          onError: (e) => toast.error(e.message),
+        },
+      );
+    } else {
+      localCalendar.add({
+        id: "lib-" + Date.now(),
+        date,
+        title: item.title,
+        format,
+      });
+      toast.success(`В план на ${date}`);
+    }
+  };
 
   useEffect(() => {
     if (!cloudEnabled) setLocalItems(localLibrary.load());
@@ -278,6 +313,19 @@ export default function Library() {
                       >
                         {copied === it.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         Копировать
+                      </button>
+                      <button
+                        onClick={() => addToPlan(it)}
+                        className="btn-gold"
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: 12,
+                          justifyContent: "center",
+                        }}
+                        title="Поставить в календарь на завтра"
+                      >
+                        <CalendarPlus className="w-3 h-3" />
+                        В план
                       </button>
                       <button
                         onClick={() => remove(it.id)}

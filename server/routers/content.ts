@@ -2,6 +2,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { SERBOLIN_SYSTEM_PROMPT as SERBOLIN_SYSTEM } from "../_core/brand-knowledge";
+import { loadVoiceCtx } from "../_core/voice";
 
 /* ============================================================
    Content Studio — Mr. Serbolin
@@ -99,10 +100,15 @@ const RUBRIC_BLUEPRINTS: Record<Rubric, string> = {
 const buildRubricBlock = (rubric: string) =>
   RUBRIC_BLUEPRINTS[rubric as Rubric] ?? "";
 
-const callLLM = async (system: string, user: string) => {
+const callLLM = async (
+  system: string,
+  user: string,
+  workspaceKey?: string | null,
+) => {
+  const voiceCtx = await loadVoiceCtx(workspaceKey);
   const r = await invokeLLM({
     messages: [
-      { role: "system", content: system },
+      { role: "system", content: voiceCtx ? `${system}${voiceCtx}` : system },
       { role: "user", content: user },
     ],
   });
@@ -111,6 +117,8 @@ const callLLM = async (system: string, user: string) => {
     throw new Error("LLM вернул пустой ответ");
   return out;
 };
+
+const wsKeyOptional = z.string().min(8).max(64).optional();
 
 export const contentRouter = router({
   /* ---------- POST ---------- */
@@ -122,9 +130,10 @@ export const contentRouter = router({
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
         length: z.enum(["short", "medium", "long"]).default("medium"),
         rubric: z.enum(RUBRICS).default("general"),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const lengthWords =
         input.length === "short"
           ? "180–280 слов"
@@ -157,7 +166,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 Перед выдачей мысленно прогони текст через АНТИ-AI ЧЕК-ЛИСТ из системного
 промпта и убери все нарушения.`;
 
-      const post = await callLLM(system, user);
+      const post = await callLLM(system, user, input.workspaceKey);
       return {
         post,
         title: input.title,
@@ -174,9 +183,10 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
       z.object({
         title: z.string().min(5),
         duration: z.enum(["15-30s", "30-60s"]).default("15-30s"),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const system = `${SERBOLIN_SYSTEM}
 
 Текущая задача: вирусный сценарий Reels по формуле «БОЛЬ → РЕШЕНИЕ → CTA В БОТ»
@@ -193,7 +203,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 **CTA (последние 2–3 с):** [конкретный призыв забрать гайд/разбор в боте]
 **КАДРЫ:** [3–4 буллета описаний планов в квадратных скобках]`;
 
-      const script = await callLLM(system, user);
+      const script = await callLLM(system, user, input.workspaceKey);
       return { script, title: input.title, duration: input.duration };
     }),
 
@@ -203,9 +213,10 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
       z.object({
         title: z.string().min(5),
         count: z.number().int().min(3).max(10).default(7),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const system = `${SERBOLIN_SYSTEM}
 
 Текущая задача: сгенерировать N виральных хуков + оценить каждый по
@@ -240,7 +251,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
   ]
 }`;
 
-      const raw = await callLLM(system, user);
+      const raw = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -289,9 +300,10 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       z.object({
         title: z.string().min(5),
         platform: z.enum(["instagram", "telegram"]).default("instagram"),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const system = `${SERBOLIN_SYSTEM}
 
 Текущая задача: подбор хештегов. Без spam-тегов вида #fitness2024. Только релевантные.
@@ -300,7 +312,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       const user = `Подбери 15 хештегов для ${input.platform} к теме «${input.title}».
 Выдай одной строкой через пробел, начиная с #. Без объяснений.`;
 
-      const raw = await callLLM(system, user);
+      const raw = await callLLM(system, user, input.workspaceKey);
       const tags = Array.from(
         new Set(
           raw
@@ -319,9 +331,10 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       z.object({
         title: z.string().min(5),
         slides: z.number().int().min(5).max(10).default(7),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const system = `${SERBOLIN_SYSTEM}
 
 Текущая задача: контент-карусель для Instagram (${input.slides} слайдов).
@@ -334,7 +347,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
 
 Слайд 1 — обложка-хук. Последний слайд — CTA в духе «Напиши Эдуарду» или «Забери план».`;
 
-      const carousel = await callLLM(system, user);
+      const carousel = await callLLM(system, user, input.workspaceKey);
       return { carousel, slides: input.slides, title: input.title };
     }),
 
@@ -399,9 +412,10 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
         kind: z
           .enum(["post", "reels", "carousel", "hook", "free"])
           .default("free"),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const kindHint =
         input.kind === "reels"
           ? "Это сценарий Reels — сохрани таймкоды и разделы (ХУК/ТЕЛО/ТРИГГЕР/CTA/КАДРЫ)."
@@ -432,7 +446,7 @@ ${input.instruction}
 
 Выдай только финальный отредактированный текст.`;
 
-      const refined = await callLLM(system, user);
+      const refined = await callLLM(system, user, input.workspaceKey);
       return { refined, kind: input.kind };
     }),
 
@@ -444,9 +458,10 @@ ${input.instruction}
         platform: z.enum(["telegram", "instagram"]).default("instagram"),
         tone: z.enum(TONES).default("expert"),
         rubric: z.enum(RUBRICS).default("general"),
+      workspaceKey: wsKeyOptional,
       })
-    )
-    .mutation(async ({ input }) => {
+      )
+      .mutation(async ({ input }) => {
       const rubricBlock = buildRubricBlock(input.rubric);
       const system = `${SERBOLIN_SYSTEM}
 
@@ -466,7 +481,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
 }
 Без пояснений вне JSON.`;
 
-      const raw = await callLLM(system, user);
+      const raw = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -501,6 +516,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
           .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
           .default("mixed"),
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
+        workspaceKey: wsKeyOptional,
       }),
     )
     .mutation(async ({ input }) => {
@@ -557,7 +573,7 @@ JSON без markdown-обёртки:
 В items должно быть РОВНО ${total} элементов. Даты — корректные ISO-даты
 ${input.weeksCount * 7} дней начиная с ${input.startDate}.`;
 
-      const raw = await callLLM(system, user);
+      const raw = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")

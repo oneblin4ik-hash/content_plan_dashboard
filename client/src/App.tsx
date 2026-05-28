@@ -13,6 +13,7 @@ import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
 import Trends from "./pages/Trends";
 import Media from "./pages/Media";
+import Integrations from "./pages/Integrations";
 import Navigation from "./components/Navigation";
 
 function Router() {
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/library" component={Library} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/integrations" component={Integrations} />
       <Route path="/settings" component={Settings} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

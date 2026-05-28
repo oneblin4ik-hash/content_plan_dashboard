@@ -106,6 +106,7 @@ export default function ContentGenerator() {
       original,
       instruction: refineInstruction.trim(),
       kind: key,
+      workspaceKey: workspaceKey || undefined,
     });
     setRefinedOverrides((s) => ({ ...s, [key]: r.refined }));
     setRefineHistory((s) => ({
@@ -142,17 +143,19 @@ export default function ContentGenerator() {
      ничего вшивать в title */
   const handleGenerate = async () => {
     if (!title.trim() || title.trim().length < 5) return;
+    const wk = workspaceKey || undefined;
     if (mode === "pack")
-      await pack.mutateAsync({ title, platform, tone, rubric });
+      await pack.mutateAsync({ title, platform, tone, rubric, workspaceKey: wk });
     else if (mode === "post")
-      await post.mutateAsync({ title, tone, platform, length, rubric });
-    else if (mode === "reels") await reels.mutateAsync({ title, duration });
+      await post.mutateAsync({ title, tone, platform, length, rubric, workspaceKey: wk });
+    else if (mode === "reels")
+      await reels.mutateAsync({ title, duration, workspaceKey: wk });
     else if (mode === "hooks")
-      await hooks.mutateAsync({ title, count: hookCount });
+      await hooks.mutateAsync({ title, count: hookCount, workspaceKey: wk });
     else if (mode === "hashtags")
-      await hashtags.mutateAsync({ title, platform });
+      await hashtags.mutateAsync({ title, platform, workspaceKey: wk });
     else if (mode === "carousel")
-      await carousel.mutateAsync({ title, slides });
+      await carousel.mutateAsync({ title, slides, workspaceKey: wk });
   };
 
   const handleCopy = (text: string, id: string) => {

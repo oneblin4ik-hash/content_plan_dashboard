@@ -6,6 +6,7 @@ import { syncRouter } from "../server/routers/sync";
 import { trendsRouter } from "../server/routers/trends";
 import { mediaRouter } from "../server/routers/media";
 import { metricsRouter } from "../server/routers/metrics";
+import { integrationsRouter } from "../server/routers/integrations";
 
 export const appRouter = router({
   system: systemRouter,
@@ -15,6 +16,7 @@ export const appRouter = router({
   trends: trendsRouter,
   media: mediaRouter,
   metrics: metricsRouter,
+  integrations: integrationsRouter,
   auth: router({
     me: publicProcedure.query(() => null),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),

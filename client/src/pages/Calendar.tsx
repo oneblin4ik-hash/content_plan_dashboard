@@ -123,6 +123,7 @@ export default function Calendar() {
       postsPerWeek: planForm.postsPerWeek,
       segment: planForm.segment,
       platform: planForm.platform,
+      workspaceKey,
     });
     /* Сохраняем последовательно — D1 REST не любит мегаконкаррентные
        инсёрты на одну таблицу с маленького аккаунта. */
