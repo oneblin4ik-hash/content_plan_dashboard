@@ -10,6 +10,7 @@ import { mediaRouter } from "./routers/media";
 import { metricsRouter } from "./routers/metrics";
 import { integrationsRouter } from "./routers/integrations";
 import { topicsRouter } from "./routers/topics";
+import { competitorsRouter } from "./routers/competitors";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -22,6 +23,7 @@ export const appRouter = router({
   metrics: metricsRouter,
   integrations: integrationsRouter,
   topics: topicsRouter,
+  competitors: competitorsRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

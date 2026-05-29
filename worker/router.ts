@@ -8,6 +8,7 @@ import { mediaRouter } from "../server/routers/media";
 import { metricsRouter } from "../server/routers/metrics";
 import { integrationsRouter } from "../server/routers/integrations";
 import { topicsRouter } from "../server/routers/topics";
+import { competitorsRouter } from "../server/routers/competitors";
 
 export const appRouter = router({
   system: systemRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   metrics: metricsRouter,
   integrations: integrationsRouter,
   topics: topicsRouter,
+  competitors: competitorsRouter,
   auth: router({
     me: publicProcedure.query(() => null),
     logout: publicProcedure.mutation(() => ({ success: true } as const)),

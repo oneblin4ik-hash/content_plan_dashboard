@@ -1,9 +1,31 @@
 import { useState } from "react";
-import { Brain, Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Brain,
+  Plus,
+  Trash2,
+  Loader2,
+  Users,
+  BarChart3,
+  RefreshCw,
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  Send,
+  Youtube,
+} from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 
+/* Раздел /analytics состоит из двух табов:
+   - «Конкуренты» — публичный парсинг TG + YouTube + AI-анализ
+     (что работает у конкурента, как использовать у себя)
+   - «Мои публикации» — ручной ввод метрик постов + AI-инсайты
+     (бывшая RealMetricsSection) */
+type AnalyticsTab = "competitors" | "self";
+
 export default function Analytics() {
+  const [tab, setTab] = useState<AnalyticsTab>("competitors");
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
       <header style={{ padding: "56px 0 8px" }}>
@@ -17,15 +39,744 @@ export default function Analytics() {
           </h1>
           <p
             className="text-platinum"
-            style={{ maxWidth: 620, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
+            style={{
+              maxWidth: 620,
+              fontSize: 18,
+              lineHeight: 1.5,
+              marginTop: 18,
+            }}
           >
-            Заноси цифры после публикации — а AI разберёт, какие темы, форматы
-            и хуки реально зашли твоей аудитории.
+            {tab === "competitors"
+              ? "Парсим публичные каналы конкурентов в фитнес-нише и просим AI разобрать, какой контент у них залетает и как это использовать."
+              : "Заноси цифры после публикации — AI разберёт, какие темы, форматы и хуки реально зашли твоей аудитории."}
           </p>
+
+          <div
+            style={{
+              marginTop: 28,
+              display: "inline-flex",
+              gap: 4,
+              padding: 4,
+              background: "var(--ink-2)",
+              borderRadius: 9999,
+            }}
+          >
+            <TabBtn
+              active={tab === "competitors"}
+              onClick={() => setTab("competitors")}
+              icon={<Users className="w-4 h-4" />}
+              label="Конкуренты"
+            />
+            <TabBtn
+              active={tab === "self"}
+              onClick={() => setTab("self")}
+              icon={<BarChart3 className="w-4 h-4" />}
+              label="Мои публикации"
+            />
+          </div>
         </div>
       </header>
 
-      <RealMetricsSection />
+      {tab === "competitors" ? <CompetitorsSection /> : <RealMetricsSection />}
+    </div>
+  );
+}
+
+function TabBtn({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "8px 16px",
+        borderRadius: 9999,
+        border: 0,
+        fontFamily: "var(--font-body)",
+        fontSize: 13,
+        fontWeight: 600,
+        background: active ? "var(--brand-gold)" : "transparent",
+        color: active ? "var(--ink)" : "var(--brand-platinum)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+/* ============================================================
+   Конкуренты — парсинг TG/YT + per-канал AI-отчёт.
+   Таблица из карточек: подписчики, средние просмотры, что особенного,
+   что залетает, как использовать.
+   ============================================================ */
+function CompetitorsSection() {
+  const { cloudEnabled } = useWorkspace();
+  const list = trpc.competitors.list.useQuery(undefined, {
+    enabled: cloudEnabled,
+  });
+  const refresh = trpc.competitors.refresh.useMutation({
+    onSuccess: (r) => {
+      list.refetch();
+      toast.success(`Обновил ${r.okCount} из ${r.total} каналов`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const analyze = trpc.competitors.analyze.useMutation({
+    onSuccess: () => {
+      list.refetch();
+      toast.success("AI-отчёт готов");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const addChannel = trpc.competitors.add.useMutation({
+    onSuccess: (r) => {
+      list.refetch();
+      if (r.status === "ok") toast.success(`Добавлен, ${r.postCount} постов`);
+      else toast.error(`Добавлен, но не отдал постов (${r.status})`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const removeChannel = trpc.competitors.remove.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+
+  const [newHandle, setNewHandle] = useState("");
+  const [newPlatform, setNewPlatform] = useState<"tg" | "yt">("tg");
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+  if (!cloudEnabled) {
+    return (
+      <section className="container py-12">
+        <div className="bento-card" style={{ padding: 24 }}>
+          <p className="text-platinum">
+            Включи синхронизацию в Настройках, чтобы видеть конкурентов и
+            сохранять отчёты.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const channels = list.data ?? [];
+  const okCount = channels.filter((c) => c.status === "ok").length;
+
+  const handleAdd = () => {
+    const cleaned = newHandle
+      .trim()
+      .replace(/^@/, "")
+      .replace(/^https?:\/\/(www\.)?youtube\.com\/@?/i, "")
+      .replace(/^https?:\/\/(www\.)?t\.me\/(s\/)?/i, "")
+      .replace(/\/.*$/, "");
+    if (!cleaned) return;
+    addChannel.mutate({ platform: newPlatform, handle: cleaned });
+    setNewHandle("");
+  };
+
+  return (
+    <section style={{ padding: "16px 0 96px" }}>
+      <div className="container">
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: 18,
+          }}
+        >
+          <button
+            onClick={() => refresh.mutate({})}
+            disabled={refresh.isPending}
+            className="btn-gold gold-glow"
+            style={{ padding: "12px 22px", fontSize: 14 }}
+          >
+            {refresh.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Парсю каналы...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" /> Обновить все
+              </>
+            )}
+          </button>
+          {channels.length > 0 && (
+            <span
+              className="text-platinum"
+              style={{ fontSize: 13, opacity: 0.7 }}
+            >
+              {channels.length} каналов · {okCount} рабочих
+            </span>
+          )}
+        </div>
+
+        {/* Форма добавить */}
+        <div
+          className="bento-card"
+          style={{ padding: 16, marginBottom: 18 }}
+        >
+          <div className="flex gap-2 items-center" style={{ flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                gap: 2,
+                padding: 3,
+                background: "var(--ink-3)",
+                borderRadius: 9999,
+              }}
+            >
+              <PlatformChip
+                active={newPlatform === "tg"}
+                onClick={() => setNewPlatform("tg")}
+                icon={<Send className="w-3.5 h-3.5" />}
+                label="Telegram"
+              />
+              <PlatformChip
+                active={newPlatform === "yt"}
+                onClick={() => setNewPlatform("yt")}
+                icon={<Youtube className="w-3.5 h-3.5" />}
+                label="YouTube"
+              />
+            </div>
+            <input
+              value={newHandle}
+              onChange={(e) => setNewHandle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              placeholder={
+                newPlatform === "tg"
+                  ? "@channel или t.me/channel"
+                  : "@handle или youtube.com/@handle"
+              }
+              style={{
+                flex: 1,
+                minWidth: 200,
+                background: "var(--ink-3)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 9999,
+                padding: "10px 16px",
+                fontSize: 14,
+              }}
+            />
+            <button
+              onClick={handleAdd}
+              disabled={addChannel.isPending || !newHandle.trim()}
+              className="btn-gold"
+              style={{ padding: "10px 18px" }}
+            >
+              {addChannel.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Добавить
+            </button>
+          </div>
+        </div>
+
+        {/* Таблица карточек */}
+        {list.isLoading ? (
+          <div className="text-platinum" style={{ fontSize: 14 }}>
+            <Loader2
+              className="w-4 h-4 animate-spin"
+              style={{ display: "inline", marginRight: 8 }}
+            />
+            Загружаю...
+          </div>
+        ) : channels.length === 0 ? (
+          <div className="bento-card" style={{ padding: 24 }}>
+            <p className="text-platinum">
+              Пусто. Добавь канал выше или нажми «Обновить все», чтобы
+              начать.
+            </p>
+          </div>
+        ) : (
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+            }}
+          >
+            {channels.map((c) => (
+              <CompetitorCard
+                key={c.id}
+                channel={c}
+                onAnalyze={() => {
+                  setAnalyzingId(c.id);
+                  analyze.mutate(
+                    { id: c.id },
+                    { onSettled: () => setAnalyzingId(null) },
+                  );
+                }}
+                onRemove={() => removeChannel.mutate({ id: c.id })}
+                isAnalyzing={
+                  analyze.isPending && analyzingId === c.id
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlatformChip({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 9999,
+        border: 0,
+        background: active ? "var(--brand-gold)" : "transparent",
+        color: active ? "var(--ink)" : "var(--brand-platinum)",
+        fontFamily: "var(--font-body)",
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+type CompetitorChannel = {
+  id: string;
+  platform: "tg" | "yt";
+  handle: string;
+  title: string | null;
+  subscribers: number | null;
+  avgViews: number | null;
+  bio: string | null;
+  samplePosts: Array<{ text: string; views?: number; url?: string }>;
+  analysis: {
+    niche_summary: string;
+    what_works: string[];
+    content_formats: string[];
+    hook_patterns: string[];
+    recommendations_for_serbolin: string[];
+  } | null;
+  status: string;
+  lastSyncedAt: number | null;
+  lastAnalyzedAt: number | null;
+  lastError: string | null;
+};
+
+function CompetitorCard({
+  channel,
+  onAnalyze,
+  onRemove,
+  isAnalyzing,
+}: {
+  channel: CompetitorChannel;
+  onAnalyze: () => void;
+  onRemove: () => void;
+  isAnalyzing: boolean;
+}) {
+  const platformIcon =
+    channel.platform === "tg" ? (
+      <Send className="w-3.5 h-3.5" />
+    ) : (
+      <Youtube className="w-3.5 h-3.5" />
+    );
+  const platformUrl =
+    channel.platform === "tg"
+      ? `https://t.me/${channel.handle}`
+      : `https://www.youtube.com/@${channel.handle}`;
+  const isOk = channel.status === "ok";
+
+  return (
+    <div
+      className="bento-card"
+      style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}
+    >
+      <div
+        className="flex items-start justify-between"
+        style={{ gap: 12 }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            className="flex items-center"
+            style={{ gap: 6, marginBottom: 6, fontSize: 11 }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 8px",
+                borderRadius: 9999,
+                background:
+                  channel.platform === "tg"
+                    ? "rgba(34,158,217,0.12)"
+                    : "rgba(255,0,0,0.12)",
+                color: channel.platform === "tg" ? "#229ED9" : "#ff4d4d",
+                fontWeight: 700,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+              }}
+            >
+              {platformIcon}
+              {channel.platform === "tg" ? "Telegram" : "YouTube"}
+            </span>
+            <span
+              style={{
+                color: isOk ? "#3ecf8e" : "var(--muted-foreground)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              {isOk ? (
+                <CheckCircle2 className="w-3 h-3" />
+              ) : (
+                <AlertCircle className="w-3 h-3" />
+              )}
+              {isOk ? "активен" : channel.status}
+            </span>
+          </div>
+          <h3
+            style={{
+              fontSize: 18,
+              letterSpacing: "-0.3px",
+              lineHeight: 1.25,
+              marginBottom: 4,
+            }}
+          >
+            <a
+              href={platformUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "inherit", textDecoration: "none" }}
+            >
+              {channel.title || `@${channel.handle}`}
+            </a>
+          </h3>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--muted-foreground)",
+            }}
+          >
+            @{channel.handle}
+          </div>
+        </div>
+        <button
+          onClick={onRemove}
+          title="Удалить из списка"
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "var(--muted-foreground)",
+            cursor: "pointer",
+            padding: 4,
+            lineHeight: 0,
+          }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Метрики */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <Stat
+          label="Подписчики"
+          value={
+            channel.subscribers
+              ? channel.subscribers.toLocaleString("ru-RU")
+              : "—"
+          }
+        />
+        <Stat
+          label={
+            channel.platform === "yt" ? "Среднее видео" : "Средний пост"
+          }
+          value={
+            channel.avgViews
+              ? channel.avgViews.toLocaleString("ru-RU")
+              : "—"
+          }
+          suffix={channel.avgViews ? "просмотров" : undefined}
+        />
+      </div>
+
+      {channel.bio && (
+        <p
+          style={{
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--brand-platinum)",
+            padding: 10,
+            background: "var(--ink-3)",
+            borderRadius: 10,
+            margin: 0,
+          }}
+        >
+          {channel.bio}
+        </p>
+      )}
+
+      {/* AI-отчёт */}
+      {channel.analysis ? (
+        <div
+          style={{
+            padding: 12,
+            background: "rgba(212,168,67,0.06)",
+            border: "1px solid rgba(212,168,67,0.2)",
+            borderRadius: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          <ReportRow
+            label="Ниша"
+            value={channel.analysis.niche_summary}
+          />
+          <ReportList
+            label="Что залетает"
+            items={channel.analysis.what_works}
+          />
+          <ReportList
+            label="Форматы"
+            items={channel.analysis.content_formats}
+            inline
+          />
+          <ReportList
+            label="Паттерны хуков"
+            items={channel.analysis.hook_patterns}
+          />
+          <ReportList
+            label="Как использовать"
+            items={channel.analysis.recommendations_for_serbolin}
+            accent
+          />
+          {channel.lastAnalyzedAt && (
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--muted-foreground)",
+                marginTop: 4,
+              }}
+            >
+              Отчёт от{" "}
+              {new Date(channel.lastAnalyzedAt).toLocaleString("ru-RU")}
+            </div>
+          )}
+        </div>
+      ) : isOk ? (
+        <div
+          className="text-platinum"
+          style={{ fontSize: 12, opacity: 0.7 }}
+        >
+          Спарсили {channel.samplePosts.length}{" "}
+          {channel.platform === "yt" ? "видео" : "постов"}. Жми
+          «Разобрать», чтобы AI выдал отчёт.
+        </div>
+      ) : (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#ff9a7a",
+          }}
+        >
+          Канал недоступен публично или не существует. Можно удалить из
+          списка.
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={onAnalyze}
+          disabled={!isOk || isAnalyzing || channel.samplePosts.length < 3}
+          className="btn-gold"
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            padding: "10px 14px",
+            fontSize: 13,
+          }}
+        >
+          {isAnalyzing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Анализирую...
+            </>
+          ) : (
+            <>
+              <Brain className="w-4 h-4" />
+              {channel.analysis ? "Переанализировать" : "Разобрать"}
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--ink-2)",
+        borderRadius: 10,
+        padding: "8px 12px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: 1.4,
+          color: "var(--muted-foreground)",
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "#fff" }}>
+        {value}
+        {suffix && (
+          <span
+            style={{
+              fontSize: 9,
+              color: "var(--muted-foreground)",
+              marginLeft: 4,
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+            }}
+          >
+            {suffix}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        className="eyebrow"
+        style={{ fontSize: 10, marginBottom: 4 }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: "#fff",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ReportList({
+  label,
+  items,
+  accent,
+  inline,
+}: {
+  label: string;
+  items: string[];
+  accent?: boolean;
+  inline?: boolean;
+}) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      <div
+        className="eyebrow"
+        style={{
+          fontSize: 10,
+          marginBottom: 4,
+          color: accent ? "var(--brand-gold)" : undefined,
+        }}
+      >
+        {label}
+      </div>
+      {inline ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {items.map((it, i) => (
+            <span
+              key={i}
+              style={{
+                fontSize: 11,
+                padding: "3px 10px",
+                borderRadius: 9999,
+                background: "var(--ink-2)",
+                color: "#fff",
+              }}
+            >
+              {it}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 18,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: accent ? "var(--brand-gold)" : "var(--brand-platinum)",
+          }}
+        >
+          {items.map((it, i) => (
+            <li key={i} style={{ marginBottom: 3 }}>
+              {it}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
