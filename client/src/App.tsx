@@ -8,8 +8,7 @@ import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
 import ContentGenerator from "./pages/ContentGenerator";
-import Library from "./pages/Library";
-import Calendar from "./pages/Calendar";
+import Plan from "./pages/Plan";
 import Settings from "./pages/Settings";
 import Trends from "./pages/Trends";
 import Media from "./pages/Media";
@@ -23,8 +22,13 @@ function Router() {
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/trends" component={Trends} />
       <Route path="/media" component={Media} />
-      <Route path="/library" component={Library} />
-      <Route path="/calendar" component={Calendar} />
+      {/* /plan — основной маршрут (табы Календарь / Архив).
+          /calendar и /library оставлены для обратной совместимости со
+          старыми закладками — оба ведут в Plan, начальный таб
+          определяется внутри по pathname. */}
+      <Route path="/plan" component={Plan} />
+      <Route path="/library" component={Plan} />
+      <Route path="/calendar" component={Plan} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/integrations" component={Integrations} />
       <Route path="/settings" component={Settings} />

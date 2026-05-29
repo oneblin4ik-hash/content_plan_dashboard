@@ -10,14 +10,13 @@ import {
    скролл-стрип со всеми разделами. Размеры тапов ≥ 40×40.
 
    Порядок primary = реальный путь пользователя:
-   План (идеи) → Студия (генерация) → Календарь (расписание) →
-   Библиотека (архив) → Аналитика (что сработало).
+   Идеи (витрина тем) → Студия (генерация) → План (расписание+архив,
+   объединённый раздел с табами) → Аналитика (что сработало).
    Реже используемое (тренды, медиа, интеграции, настройки) — в utility. */
 const primary = [
-  { href: "/", label: "План", icon: BookOpen },
+  { href: "/", label: "Идеи", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
-  { href: "/calendar", label: "Календарь", icon: Calendar },
-  { href: "/library", label: "Библиотека", icon: Library },
+  { href: "/plan", label: "План", icon: Calendar },
   { href: "/analytics", label: "Аналитика", icon: BarChart3 },
 ];
 
@@ -29,6 +28,19 @@ const utility = [
 ];
 
 type Item = { href: string; label: string; icon: typeof BookOpen };
+
+/* /plan — обёртка над Календарём и Архивом; ему «принадлежат» и
+   старые маршруты /calendar и /library (оставлены для закладок). */
+function isActive(href: string, location: string): boolean {
+  if (href === "/plan") {
+    return (
+      location === "/plan" ||
+      location === "/calendar" ||
+      location === "/library"
+    );
+  }
+  return location === href;
+}
 
 function NavChip({
   item,
@@ -109,7 +121,7 @@ export default function Navigation() {
         >
           {primary.map((it) => (
             <li key={it.href}>
-              <NavChip item={it} active={location === it.href} />
+              <NavChip item={it} active={isActive(it.href, location)} />
             </li>
           ))}
         </ul>
@@ -119,7 +131,7 @@ export default function Navigation() {
         >
           {utility.map((it) => (
             <li key={it.href}>
-              <NavChip item={it} active={location === it.href} iconOnly />
+              <NavChip item={it} active={isActive(it.href, location)} iconOnly />
             </li>
           ))}
         </ul>
@@ -149,7 +161,7 @@ export default function Navigation() {
         >
           {all.map((it) => (
             <li key={it.href}>
-              <NavChip item={it} active={location === it.href} />
+              <NavChip item={it} active={isActive(it.href, location)} />
             </li>
           ))}
         </ul>

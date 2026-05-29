@@ -33,7 +33,9 @@ const previewOf = (item: LibraryItem): string => {
   return JSON.stringify(p, null, 2);
 };
 
-export default function Library() {
+/* Когда вызывается с embedded=true (из /plan через табы),
+   собственный hero-хедер и обёртка min-h-screen не рендерятся. */
+export default function Library({ embedded = false }: { embedded?: boolean }) {
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const [localItems, setLocalItems] = useState<LibraryItem[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
@@ -127,8 +129,9 @@ export default function Library() {
     setTimeout(() => setCopied(null), 1600);
   };
 
-  return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+  const inner = (
+    <>
+      {!embedded && (
       <section style={{ padding: "56px 0 16px" }}>
         <div className="container">
           <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
@@ -173,6 +176,7 @@ export default function Library() {
           </p>
         </div>
       </section>
+      )}
 
       <section style={{ padding: "24px 0 96px" }}>
         <div className="container">
@@ -348,6 +352,14 @@ export default function Library() {
           )}
         </div>
       </section>
+    </>
+  );
+
+  return embedded ? (
+    inner
+  ) : (
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      {inner}
     </div>
   );
 }

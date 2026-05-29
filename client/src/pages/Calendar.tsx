@@ -22,7 +22,11 @@ const MONTHS = ["Январь","Февраль","Март","Апрель","Ма�
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-export default function Calendar() {
+/* Когда вызывается с embedded=true (например из /plan через табы),
+   собственный hero-хедер не рендерится — у родителя свой. Корневая
+   обёртка тоже схлопывается до фрагмента, чтобы не двоились
+   min-h-screen + фоны. */
+export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -172,8 +176,9 @@ export default function Calendar() {
   const scheduledTopicIds = new Set(items.map((i) => i.topicId).filter((v): v is number => typeof v === "number"));
   const unscheduledTopics = allContentTopics.filter((t) => !scheduledTopicIds.has(t.id));
 
-  return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+  const inner = (
+    <>
+      {!embedded && (
       <section style={{ padding: "56px 0 16px" }}>
         <div className="container">
           <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
@@ -339,6 +344,7 @@ export default function Calendar() {
           )}
         </div>
       </section>
+      )}
 
       <section style={{ padding: "24px 0 96px" }}>
         <div className="container grid gap-6" style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)" }}>
@@ -544,6 +550,14 @@ export default function Calendar() {
           </div>
         </div>
       </section>
+    </>
+  );
+
+  return embedded ? (
+    inner
+  ) : (
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      {inner}
     </div>
   );
 }
