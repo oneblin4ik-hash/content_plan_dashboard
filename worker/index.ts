@@ -9,6 +9,9 @@ import { d1Execute, isD1Configured } from "../server/_core/d1";
 
 type Env = {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
+  /* D1 binding из wrangler.toml — даёт прямой service binding к базе.
+     Через него server/_core/d1.ts делает batch без HTTP-subrequests. */
+  DB?: unknown;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_D1_DATABASE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
@@ -94,6 +97,10 @@ function syncProcessEnv(env: Env) {
     if (typeof v === "string") target[k] = v;
   }
   if (!(globalThis as any).process) (globalThis as any).process = { env: target };
+  /* Кладём D1 binding в globalThis, чтобы d1Batch() в server/_core/d1.ts
+     мог им воспользоваться без передачи через ctx tRPC. Это в разы
+     дешевле по subrequests, чем REST-вызовы для каждого statement. */
+  if (env.DB) (globalThis as any).__d1_binding = env.DB;
 }
 
 export default {
@@ -131,6 +138,7 @@ export default {
     if (url.pathname === "/api/_admin/migrate") {
       return handleAdminMigrate(request);
     }
+
 
     return env.ASSETS.fetch(request);
   },
