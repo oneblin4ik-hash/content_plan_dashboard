@@ -390,6 +390,16 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
         throw new Error(`LLM invoke failed: ${lastError}`);
       }
 
+      // 429 с пометкой RESOURCE_EXHAUSTED — это daily quota free-tier'а
+      // AI Studio (gemini-3.5-flash = 20 RPD). Ретраи внутри суток
+      // бесполезны: только тратим время пользователя. Сразу переходим
+      // к резервной модели.
+      const isQuotaExhausted =
+        response.status === 429 && /RESOURCE_EXHAUSTED/i.test(errorText);
+      if (isQuotaExhausted) {
+        break; // выходим из цикла попыток, идём к следующей модели
+      }
+
       // Есть ещё попытки на этой модели — ждём и повторяем.
       if (attempt < maxAttempts) {
         await sleep(500 * 2 ** (attempt - 1)); // 0.5s, 1s

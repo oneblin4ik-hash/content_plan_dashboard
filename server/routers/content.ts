@@ -100,11 +100,15 @@ const RUBRIC_BLUEPRINTS: Record<Rubric, string> = {
 const buildRubricBlock = (rubric: string) =>
   RUBRIC_BLUEPRINTS[rubric as Rubric] ?? "";
 
+/* callLLM возвращает не только текст, но и имя модели, которая реально
+   ответила. У Gemini в OpenAI-compat ответе это поле `model` (например
+   "models/gemini-2.5-flash"). UI Студии показывает badge — пользователь
+   видит, когда сработал fallback с 3.5 на 2.5 (при daily quota). */
 const callLLM = async (
   system: string,
   user: string,
   workspaceKey?: string | null,
-) => {
+): Promise<{ text: string; model: string }> => {
   const voiceCtx = await loadVoiceCtx(workspaceKey);
   const r = await invokeLLM({
     messages: [
@@ -115,7 +119,9 @@ const callLLM = async (
   const out = r.choices[0]?.message.content;
   if (!out || typeof out !== "string")
     throw new Error("LLM вернул пустой ответ");
-  return out;
+  // Gemini префиксует имя моделей как "models/gemini-…" — срезаем для UI.
+  const model = (r.model ?? "").replace(/^models\//, "");
+  return { text: out, model };
 };
 
 const wsKeyOptional = z.string().min(8).max(64).optional();
@@ -166,7 +172,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 Перед выдачей мысленно прогони текст через АНТИ-AI ЧЕК-ЛИСТ из системного
 промпта и убери все нарушения.`;
 
-      const post = await callLLM(system, user, input.workspaceKey);
+      const { text: post, model } = await callLLM(system, user, input.workspaceKey);
       return {
         post,
         title: input.title,
@@ -174,6 +180,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
         tone: input.tone,
         length: input.length,
         rubric: input.rubric,
+        model,
       };
     }),
 
@@ -203,8 +210,8 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 **CTA (последние 2–3 с):** [конкретный призыв забрать гайд/разбор в боте]
 **КАДРЫ:** [3–4 буллета описаний планов в квадратных скобках]`;
 
-      const script = await callLLM(system, user, input.workspaceKey);
-      return { script, title: input.title, duration: input.duration };
+      const { text: script, model } = await callLLM(system, user, input.workspaceKey);
+      return { script, title: input.title, duration: input.duration, model };
     }),
 
   /* ---------- HOOK VARIATIONS — со scoring'ом (idea #6) ---------- */
@@ -251,7 +258,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
   ]
 }`;
 
-      const raw = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -291,7 +298,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       hooks.sort((a, b) => b.score - a.score);
       hooks = hooks.slice(0, input.count);
 
-      return { hooks, title: input.title };
+      return { hooks, title: input.title, model };
     }),
 
   /* ---------- HASHTAGS — новая фича ---------- */
@@ -312,7 +319,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       const user = `Подбери 15 хештегов для ${input.platform} к теме «${input.title}».
 Выдай одной строкой через пробел, начиная с #. Без объяснений.`;
 
-      const raw = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
       const tags = Array.from(
         new Set(
           raw
@@ -322,7 +329,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
         )
       ).slice(0, 20);
 
-      return { hashtags: tags, title: input.title };
+      return { hashtags: tags, title: input.title, model };
     }),
 
   /* ---------- CAROUSEL — новая фича ---------- */
@@ -347,8 +354,8 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
 
 Слайд 1 — обложка-хук. Последний слайд — CTA в духе «Напиши Эдуарду» или «Забери план».`;
 
-      const carousel = await callLLM(system, user, input.workspaceKey);
-      return { carousel, slides: input.slides, title: input.title };
+      const { text: carousel, model } = await callLLM(system, user, input.workspaceKey);
+      return { carousel, slides: input.slides, title: input.title, model };
     }),
 
   /* ---------- BRAND-VOICE VALIDATOR — новая фича ---------- */
@@ -446,8 +453,8 @@ ${input.instruction}
 
 Выдай только финальный отредактированный текст.`;
 
-      const refined = await callLLM(system, user, input.workspaceKey);
-      return { refined, kind: input.kind };
+      const { text: refined, model } = await callLLM(system, user, input.workspaceKey);
+      return { refined, kind: input.kind, model };
     }),
 
   /* ---------- FULL PACK — пост + reels + хуки + хештеги одной кнопкой ---------- */
@@ -481,14 +488,14 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
 }
 Без пояснений вне JSON.`;
 
-      const raw = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
         .trim();
       try {
         const parsed = JSON.parse(cleaned);
-        return { ...parsed, title: input.title, platform: input.platform };
+        return { ...parsed, title: input.title, platform: input.platform, model };
       } catch {
         return {
           post: raw,
@@ -499,6 +506,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
           title: input.title,
           platform: input.platform,
           parseError: true,
+          model,
         };
       }
     }),
@@ -573,7 +581,7 @@ JSON без markdown-обёртки:
 В items должно быть РОВНО ${total} элементов. Даты — корректные ISO-даты
 ${input.weeksCount * 7} дней начиная с ${input.startDate}.`;
 
-      const raw = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -603,6 +611,6 @@ ${input.weeksCount * 7} дней начиная с ${input.startDate}.`;
           `LLM не вернул валидный JSON. Сырой ответ: ${cleaned.slice(0, 300)}`,
         );
       }
-      return { items, total, startDate: input.startDate };
+      return { items, total, startDate: input.startDate, model };
     }),
 });

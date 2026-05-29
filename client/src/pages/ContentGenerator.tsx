@@ -441,6 +441,17 @@ export default function ContentGenerator() {
 
       <section style={{ padding: "16px 0 64px" }}>
         <div className="container grid gap-4">
+          <ModelBadge
+            model={
+              (mode === "pack" && pack.data?.model) ||
+              (mode === "post" && post.data?.model) ||
+              (mode === "reels" && reels.data?.model) ||
+              (mode === "hooks" && hooks.data?.model) ||
+              (mode === "hashtags" && hashtags.data?.model) ||
+              (mode === "carousel" && carousel.data?.model) ||
+              ""
+            }
+          />
           {mode === "pack" && pack.data && (
             <PackResult
               data={pack.data as never}
@@ -972,6 +983,48 @@ export default function ContentGenerator() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Бэйдж модели — показывается над результатом генерации.
+   Если на проде сработал fallback с 3.5 на 2.5 (например из-за
+   daily quota AI Studio free tier), это видно сразу. */
+function ModelBadge({ model }: { model: string }) {
+  if (!model) return null;
+  const lower = model.toLowerCase();
+  const is35 = lower.includes("3.5") || lower.includes("3-5");
+  const is3 = !is35 && (lower.includes("gemini-3") || lower.startsWith("gemini-3"));
+  const isTopTier = is35 || is3;
+  const label = is35
+    ? "Gemini 3.5 Flash · максимум качества"
+    : is3
+      ? "Gemini 3 Flash"
+      : lower.includes("2.5")
+        ? "Gemini 2.5 Flash · fallback"
+        : model;
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        borderRadius: 9999,
+        background: isTopTier
+          ? "rgba(62,207,142,0.12)"
+          : "rgba(212,168,67,0.10)",
+        color: isTopTier ? "#3ecf8e" : "var(--brand-gold)",
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 1.2,
+        textTransform: "uppercase",
+        width: "max-content",
+      }}
+      title={`Ответ сгенерирован моделью ${model}`}
+    >
+      <Sparkles className="w-3 h-3" />
+      {label}
     </div>
   );
 }
