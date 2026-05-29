@@ -14,4 +14,13 @@ export const ENV = {
   geminiApiUrl:
     process.env.GEMINI_API_URL ??
     "https://generativelanguage.googleapis.com/v1beta/openai",
+  // Primary content model. Default = Gemini 3.5 Flash (заметно выше качество
+  // постов/сценариев, чем 2.5). Переопределяется через GEMINI_MODEL.
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.5-flash",
+  // Резервная модель на случай 429/503 (новые preview-модели спайково
+  // перегружены). 2.5-flash стабильна и всё ещё хороша.
+  geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL ?? "gemini-2.5-flash",
+  // Опциональный thinking-бюджет для Gemini 3.x через OpenAI-compat
+  // (none|low|medium|high). Пусто = динамический thinking = макс. качество.
+  geminiReasoningEffort: process.env.GEMINI_REASONING_EFFORT ?? "",
 };

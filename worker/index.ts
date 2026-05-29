@@ -15,6 +15,9 @@ type Env = {
   BUILT_IN_FORGE_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_API_URL?: string;
+  GEMINI_MODEL?: string;
+  GEMINI_FALLBACK_MODEL?: string;
+  GEMINI_REASONING_EFFORT?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   OWNER_OPEN_ID?: string;

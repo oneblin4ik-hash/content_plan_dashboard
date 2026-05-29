@@ -12,6 +12,10 @@ not_found_handling = "single-page-application"
 [vars]
 NODE_ENV = "production"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+# Основная модель генерации. Gemini 3.5 Flash — выше качество постов/сценариев.
+# При стойких 429/503 LLM-слой сам падает на GEMINI_FALLBACK_MODEL.
+GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_FALLBACK_MODEL = "gemini-2.5-flash"
 
 # Раз в сутки в 06:00 UTC (≈ 09:00 МСК) — парсим публичные TG-каналы
 # конкурентов и обновляем банк трендов в D1.

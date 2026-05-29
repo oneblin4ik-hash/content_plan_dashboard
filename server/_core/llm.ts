@@ -209,7 +209,16 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-type LLMRoute = { url: string; apiKey: string; model: string; isForge?: boolean };
+type LLMRoute = {
+  url: string;
+  apiKey: string;
+  model: string;
+  /** Резервная модель, на которую переключаемся при стойких 429/503. */
+  fallbackModel?: string;
+  /** Gemini 3.x thinking-бюджет (none|low|medium|high), если задан. */
+  reasoningEffort?: string;
+  isForge?: boolean;
+};
 
 const resolveRoute = (): LLMRoute => {
   if (ENV.forgeApiKey) {
@@ -228,13 +237,20 @@ const resolveRoute = (): LLMRoute => {
     return {
       url: `${ENV.geminiApiUrl.replace(/\/$/, "")}/chat/completions`,
       apiKey: ENV.geminiApiKey,
-      model: "gemini-2.5-flash",
+      model: ENV.geminiModel,
+      fallbackModel: ENV.geminiFallbackModel,
+      reasoningEffort: ENV.geminiReasoningEffort || undefined,
     };
   }
   throw new Error(
     "LLM is not configured. Set BUILT_IN_FORGE_API_KEY or GEMINI_API_KEY."
   );
 };
+
+/** Транзиентные статусы Gemini/OpenAI: перегрузка и rate-limit. */
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 
 const normalizeResponseFormat = ({
@@ -316,6 +332,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   payload.max_tokens = 32768
   if (route.isForge) {
     payload.thinking = { budget_tokens: 128 };
+  } else if (route.reasoningEffort) {
+    // Gemini 3.x через OpenAI-compat: управляем глубиной thinking.
+    payload.reasoning_effort = route.reasoningEffort;
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
@@ -329,21 +348,57 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(route.url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${route.apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  /* Новые preview-модели (gemini-3.5-flash) спайково отдают 429/503
+     «high demand». Чтобы генерация не падала у пользователя:
+       1) ретраим транзиентные ошибки с экспоненциальным backoff;
+       2) если основная модель так и не ответила — один заход на
+          резервную (gemini-2.5-flash), которая стабильна.
+     На неретраебельных ошибках (400/401/404) падаем сразу. */
+  const models = route.fallbackModel && route.fallbackModel !== route.model
+    ? [route.model, route.fallbackModel]
+    : [route.model];
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
+  let lastError = "";
+  for (let mi = 0; mi < models.length; mi++) {
+    const model = models[mi];
+    const isLastModel = mi === models.length - 1;
+    // На основной модели — больше попыток; на резервной — меньше,
+    // чтобы суммарная задержка не упёрлась в таймаут Telegram-вебхука.
+    const maxAttempts = isLastModel ? 2 : 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const response = await fetch(route.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${route.apiKey}`,
+        },
+        body: JSON.stringify({ ...payload, model }),
+      });
+
+      if (response.ok) {
+        return (await response.json()) as InvokeResult;
+      }
+
+      const errorText = await response.text();
+      lastError = `${response.status} ${response.statusText} – ${errorText}`;
+
+      const transient = TRANSIENT_STATUSES.has(response.status);
+      if (!transient) {
+        // Постоянная ошибка (плохой запрос/ключ/модель) — нет смысла
+        // ни ретраить, ни переключать модель.
+        throw new Error(`LLM invoke failed: ${lastError}`);
+      }
+
+      // Есть ещё попытки на этой модели — ждём и повторяем.
+      if (attempt < maxAttempts) {
+        await sleep(500 * 2 ** (attempt - 1)); // 0.5s, 1s
+      }
+    }
+    // Модель исчерпала попытки — переходим к следующей (резервной).
   }
 
-  return (await response.json()) as InvokeResult;
+  throw new Error(
+    `LLM invoke failed after retries (${models.join(" → ")}): ${lastError}`
+  );
 }
