@@ -5,6 +5,7 @@ import {
   handleTelegramWebhook,
   handleTelegramSetup,
 } from "./telegram-webhook";
+import { d1Execute, isD1Configured } from "../server/_core/d1";
 
 type Env = {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
@@ -22,7 +23,67 @@ type Env = {
   TELEGRAM_CHAT_ID?: string;
   OWNER_OPEN_ID?: string;
   NODE_ENV?: string;
+  ADMIN_MIGRATE_SECRET?: string;
 };
+
+/* Минимальный admin-эндпоинт для применения D1-миграций в проде.
+   Защищён общим секретом ADMIN_MIGRATE_SECRET — если он не задан,
+   эндпоинт автоматически закрыт (always 403). Принимает POST JSON
+   { sql: string | string[] } и прогоняет каждое statement через
+   d1Execute. Используется только владельцем, до полноценной CI-
+   миграционной системы. */
+async function handleAdminMigrate(req: Request): Promise<Response> {
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+  const expected = process.env.ADMIN_MIGRATE_SECRET ?? "";
+  const got = req.headers.get("x-admin-secret") ?? "";
+  if (!expected || got !== expected) {
+    return new Response(JSON.stringify({ ok: false, error: "forbidden" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (!isD1Configured()) {
+    return new Response(JSON.stringify({ ok: false, error: "D1 not configured" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  let body: { sql?: string | string[] };
+  try {
+    body = (await req.json()) as { sql?: string | string[] };
+  } catch {
+    return new Response(JSON.stringify({ ok: false, error: "bad JSON" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const statements = Array.isArray(body.sql) ? body.sql : body.sql ? [body.sql] : [];
+  if (statements.length === 0) {
+    return new Response(JSON.stringify({ ok: false, error: "no sql" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const results: Array<{ sql: string; ok: boolean; error?: string }> = [];
+  for (const sql of statements) {
+    try {
+      await d1Execute(sql);
+      results.push({ sql: sql.slice(0, 120), ok: true });
+    } catch (e) {
+      results.push({
+        sql: sql.slice(0, 120),
+        ok: false,
+        error: e instanceof Error ? e.message.slice(0, 240) : String(e),
+      });
+    }
+  }
+  return new Response(JSON.stringify({ ok: true, results }, null, 2), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 function syncProcessEnv(env: Env) {
   // server/_core/env.ts reads process.env at import time, but ENV is `const`
@@ -65,6 +126,10 @@ export default {
 
     if (url.pathname === "/api/telegram/setup-webhook") {
       return handleTelegramSetup(request);
+    }
+
+    if (url.pathname === "/api/_admin/migrate") {
+      return handleAdminMigrate(request);
     }
 
     return env.ASSETS.fetch(request);
