@@ -5,23 +5,27 @@ import {
 } from "lucide-react";
 
 /* Главная нав-полоса.
-   Desktop: логотип слева, primary по центру, utility справа.
-   iPhone: логотип сверху, ниже горизонтальный скролл-стрип со всеми
-   разделами (primary + utility в одном ряду — на телефоне нет смысла
-   делить, проще все в одну ленту). Размеры тапов ≥ 40×40. */
+   Desktop: логотип слева, primary по центру (воронка создания контента),
+   utility справа иконками. iPhone: логотип сверху, ниже горизонтальный
+   скролл-стрип со всеми разделами. Размеры тапов ≥ 40×40.
+
+   Порядок primary = реальный путь пользователя:
+   План (идеи) → Студия (генерация) → Календарь (расписание) →
+   Библиотека (архив) → Аналитика (что сработало).
+   Реже используемое (тренды, медиа, интеграции, настройки) — в utility. */
 const primary = [
   { href: "/", label: "План", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
-  { href: "/trends", label: "Тренды", icon: TrendingUp },
-  { href: "/media", label: "Медиа", icon: ImageIcon },
-  { href: "/library", label: "Библиотека", icon: Library },
   { href: "/calendar", label: "Календарь", icon: Calendar },
+  { href: "/library", label: "Библиотека", icon: Library },
+  { href: "/analytics", label: "Аналитика", icon: BarChart3 },
 ];
 
 const utility = [
-  { href: "/analytics", label: "Аналитика", icon: BarChart3 },
+  { href: "/trends", label: "Тренды", icon: TrendingUp },
+  { href: "/media", label: "Медиа", icon: ImageIcon },
   { href: "/integrations", label: "Интеграции", icon: Link2 },
-  { href: "/settings", label: "Sync", icon: KeyRound },
+  { href: "/settings", label: "Настройки", icon: KeyRound },
 ];
 
 type Item = { href: string; label: string; icon: typeof BookOpen };

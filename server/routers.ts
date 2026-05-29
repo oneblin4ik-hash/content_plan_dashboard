@@ -4,7 +4,6 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { contentRouter } from "./routers/content";
 import { telegramRouter } from "./routers/telegram";
-import { exportRouter } from "./routers/export";
 import { syncRouter } from "./routers/sync";
 import { trendsRouter } from "./routers/trends";
 import { mediaRouter } from "./routers/media";
@@ -16,7 +15,6 @@ export const appRouter = router({
   system: systemRouter,
   content: contentRouter,
   telegram: telegramRouter,
-  export: exportRouter,
   sync: syncRouter,
   trends: trendsRouter,
   media: mediaRouter,

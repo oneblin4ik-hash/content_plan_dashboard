@@ -4,8 +4,6 @@ import { Input } from "@/components/ui/input";
 import {
   Search,
   Sparkles,
-  CheckCircle2,
-  Download,
   Trophy,
   Zap,
   BookOpen,
@@ -14,7 +12,6 @@ import {
   Check,
 } from "lucide-react";
 import { allContentTopics, allReelsScripts, allTactics } from "@/lib/contentData";
-import { trpc } from "@/lib/trpc";
 
 const contentTopics = allContentTopics;
 const reelsScripts = allReelsScripts;
@@ -31,13 +28,6 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [tab, setTab] = useState<"topics" | "reels" | "tactics">("topics");
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>(
-    {}
-  );
-  const [isExporting, setIsExporting] = useState(false);
-
-  const exportPDF = trpc.export.exportPDF.useMutation();
-  const exportExcel = trpc.export.exportExcel.useMutation();
 
   const filtered = useMemo(
     () =>
@@ -47,62 +37,7 @@ export default function Dashboard() {
     [searchTerm]
   );
 
-  const publishedCount = Object.values(publishedTopics).filter(Boolean).length;
   const viralCount = contentTopics.filter((t) => t.potential === "Вирусный").length;
-
-  const buildExportPayload = () => ({
-    topics: contentTopics.map((t) => ({
-      id: String(t.id),
-      title: t.title,
-      description: t.reason,
-      interest: t.interest,
-      format: t.format,
-      potential: t.potential,
-      published: publishedTopics[t.id] || false,
-      views: t.views,
-      engagement: t.engagementRate,
-    })),
-    reels: reelsScripts.map((r) => ({
-      id: String(r.id),
-      title: r.title,
-      script: `${r.hook} ${r.body || ""} ${r.trigger} ${r.cta}`,
-      published: r.published,
-    })),
-    tactics: tactics.map((t) => ({
-      id: String(t.id),
-      title: t.title,
-      description: t.description,
-    })),
-  });
-
-  const handleExportPDF = async () => {
-    setIsExporting(true);
-    try {
-      const r = await exportPDF.mutateAsync(buildExportPayload());
-      const a = document.createElement("a");
-      a.href = `data:application/pdf;base64,${r.data}`;
-      a.download = r.filename;
-      a.click();
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportExcel = async () => {
-    setIsExporting(true);
-    try {
-      const r = await exportExcel.mutateAsync(buildExportPayload());
-      const a = document.createElement("a");
-      a.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${r.data}`;
-      a.download = r.filename;
-      a.click();
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const togglePublished = (id: number) =>
-    setPublishedTopics((p) => ({ ...p, [id]: !p[id] }));
 
   const handleCopy = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
@@ -154,16 +89,16 @@ export default function Dashboard() {
               accent
             />
             <StatTile
-              eyebrow="Опубликовано"
-              value={`${publishedCount}`}
-              label={`из ${contentTopics.length}`}
-              icon={<CheckCircle2 className="w-5 h-5" />}
-            />
-            <StatTile
               eyebrow="Reels-сценариев"
               value={`${reelsScripts.length}`}
               label="готовых к съёмке"
               icon={<Trophy className="w-5 h-5" />}
+            />
+            <StatTile
+              eyebrow="Тактик"
+              value={`${tactics.length}`}
+              label="рекомендаций по запуску"
+              icon={<Sparkles className="w-5 h-5" />}
             />
           </div>
         </div>
@@ -247,22 +182,6 @@ export default function Dashboard() {
                     }}
                   />
                 </div>
-                <button
-                  className="btn-gold"
-                  onClick={handleExportPDF}
-                  disabled={isExporting}
-                  style={{ background: "var(--ink-2)", color: "#fff" }}
-                >
-                  <Download className="w-4 h-4" /> PDF
-                </button>
-                <button
-                  className="btn-gold"
-                  onClick={handleExportExcel}
-                  disabled={isExporting}
-                  style={{ background: "var(--ink-2)", color: "#fff" }}
-                >
-                  <Download className="w-4 h-4" /> Excel
-                </button>
               </div>
 
               <div
@@ -273,7 +192,6 @@ export default function Dashboard() {
                 }}
               >
                 {filtered.map((topic) => {
-                  const published = publishedTopics[topic.id];
                   return (
                     <div
                       key={topic.id}
@@ -282,7 +200,6 @@ export default function Dashboard() {
                         display: "flex",
                         flexDirection: "column",
                         gap: 14,
-                        opacity: published ? 0.55 : 1,
                       }}
                     >
                       <div
@@ -295,37 +212,12 @@ export default function Dashboard() {
                         >
                           {topic.potential}
                         </div>
-                        <button
-                          onClick={() => togglePublished(topic.id)}
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: 6,
-                            border: published
-                              ? "2px solid var(--brand-gold)"
-                              : "2px solid rgba(255,255,255,0.2)",
-                            background: published
-                              ? "var(--brand-gold)"
-                              : "transparent",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                            padding: 0,
-                          }}
-                          title={published ? "Опубликовано" : "Отметить как опубликованное"}
-                        >
-                          {published && (
-                            <Check className="w-3 h-3" style={{ color: "var(--ink)" }} />
-                          )}
-                        </button>
                       </div>
                       <h3
                         style={{
                           fontSize: 18,
                           lineHeight: 1.3,
                           letterSpacing: "-0.4px",
-                          textDecoration: published ? "line-through" : "none",
                         }}
                       >
                         {topic.title}
