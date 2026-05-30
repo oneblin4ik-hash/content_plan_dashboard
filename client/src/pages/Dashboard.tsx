@@ -52,8 +52,10 @@ export default function Dashboard() {
   const [genSegment, setGenSegment] = useState<
     "women_25_45" | "men_30_45" | "ambitious_pro" | "mixed"
   >("mixed");
+  /* drafts накапливает идеи, добавленные за текущую сессию модалки —
+     просто как подтверждение «вот что улетело в список». Сохранение
+     происходит автоматически при генерации, ручного выбора нет. */
   const [drafts, setDrafts] = useState<GeneratedDraft[]>([]);
-  const [draftSelected, setDraftSelected] = useState<Record<number, boolean>>({});
 
   const customTopics = trpc.topics.list.useQuery(
     { workspaceKey },
@@ -85,49 +87,44 @@ export default function Dashboard() {
     return [...custom, ...fromStatic];
   }, [customTopics.data]);
 
+  /* Генерация + автосохранение в один шаг. Сгенерированные идеи сразу
+     уходят в D1 и дописываются к списку раздела (с бейджем «Моя»).
+     Новые идеи накапливаются в drafts поверх предыдущих — чтобы в
+     модалке было видно всё, что добавилось за сессию. */
   const handleGenerate = async () => {
+    if (!cloudEnabled) {
+      toast.error("Включи синхронизацию в Настройках, чтобы сохранять идеи.");
+      return;
+    }
     try {
       const res = await generateTopics.mutateAsync({
         workspaceKey: workspaceKey || undefined,
         count: genCount,
         segment: genSegment,
-        avoidTitles: mergedTopics.slice(0, 60).map((t) => t.title),
+        // Избегаем дублей: и стартовые темы, и уже добавленные за сессию.
+        avoidTitles: [
+          ...drafts.map((d) => d.title),
+          ...mergedTopics.slice(0, 60).map((t) => t.title),
+        ].slice(0, 80),
       });
-      setDrafts(res.topics);
-      // По умолчанию все черновики выбраны.
-      const sel: Record<number, boolean> = {};
-      res.topics.forEach((_, i) => (sel[i] = true));
-      setDraftSelected(sel);
+      if (res.topics.length === 0) {
+        toast.error("Не удалось придумать новые идеи, попробуй ещё раз.");
+        return;
+      }
+      await saveTopicsBatch.mutateAsync({
+        workspaceKey,
+        topics: res.topics,
+      });
+      setDrafts((prev) => [...res.topics, ...prev]);
+      toast.success(`Добавлено идей: ${res.topics.length}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Не удалось сгенерировать");
-    }
-  };
-
-  const handleSaveSelected = async () => {
-    if (!cloudEnabled) {
-      toast.error("Включи синхронизацию в Настройках, чтобы сохранять темы.");
-      return;
-    }
-    const picked = drafts.filter((_, i) => draftSelected[i]);
-    if (picked.length === 0) {
-      toast.error("Выбери хотя бы одну тему.");
-      return;
-    }
-    try {
-      await saveTopicsBatch.mutateAsync({ workspaceKey, topics: picked });
-      toast.success(`Сохранено: ${picked.length}`);
-      setDrafts([]);
-      setDraftSelected({});
-      setGenOpen(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Не удалось сохранить");
     }
   };
 
   const closeGen = () => {
     setGenOpen(false);
     setDrafts([]);
-    setDraftSelected({});
   };
 
   const filtered = useMemo(
@@ -558,13 +555,9 @@ export default function Dashboard() {
           segment={genSegment}
           setSegment={setGenSegment}
           drafts={drafts}
-          selected={draftSelected}
-          setSelected={setDraftSelected}
           onGenerate={handleGenerate}
-          onSaveSelected={handleSaveSelected}
           onClose={closeGen}
-          isGenerating={generateTopics.isPending}
-          isSaving={saveTopicsBatch.isPending}
+          isGenerating={generateTopics.isPending || saveTopicsBatch.isPending}
           cloudEnabled={cloudEnabled}
         />
       )}
@@ -572,21 +565,18 @@ export default function Dashboard() {
   );
 }
 
-/* Модалка генерации тем. На первом шаге — выбор количества и сегмента ЦА;
-   после генерации — список черновиков с чекбоксами и кнопкой «Сохранить». */
+/* Модалка генерации тем. Настройки (количество + сегмент) всегда сверху.
+   Кнопка генерации сразу сохраняет идеи в раздел — ручного выбора нет.
+   Ниже копится список того, что добавилось за сессию («✓ Добавлено»). */
 function GenerateTopicsModal({
   count,
   setCount,
   segment,
   setSegment,
   drafts,
-  selected,
-  setSelected,
   onGenerate,
-  onSaveSelected,
   onClose,
   isGenerating,
-  isSaving,
   cloudEnabled,
 }: {
   count: number;
@@ -594,13 +584,9 @@ function GenerateTopicsModal({
   segment: "women_25_45" | "men_30_45" | "ambitious_pro" | "mixed";
   setSegment: (s: "women_25_45" | "men_30_45" | "ambitious_pro" | "mixed") => void;
   drafts: GeneratedDraft[];
-  selected: Record<number, boolean>;
-  setSelected: React.Dispatch<React.SetStateAction<Record<number, boolean>>>;
   onGenerate: () => void;
-  onSaveSelected: () => void;
   onClose: () => void;
   isGenerating: boolean;
-  isSaving: boolean;
   cloudEnabled: boolean;
 }) {
   const SEGMENT_OPTIONS = [
@@ -609,7 +595,7 @@ function GenerateTopicsModal({
     { v: "men_30_45", label: "Мужчины 30-45" },
     { v: "ambitious_pro", label: "Амбициозные профи" },
   ] as const;
-  const selectedCount = drafts.filter((_, i) => selected[i]).length;
+  const hasDrafts = drafts.length > 0;
 
   return (
     <div
@@ -664,244 +650,187 @@ function GenerateTopicsModal({
           </button>
         </div>
 
-        {drafts.length === 0 ? (
-          <>
-            <div className="grid gap-3" style={{ marginBottom: 18 }}>
-              <div>
-                <label
-                  className="eyebrow"
-                  style={{ display: "block", marginBottom: 8 }}
+        {/* Настройки — всегда видны */}
+        <div className="grid gap-3" style={{ marginBottom: 16 }}>
+          <div>
+            <label
+              className="eyebrow"
+              style={{ display: "block", marginBottom: 8 }}
+            >
+              Сколько тем
+            </label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[3, 6, 9, 12].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setCount(n)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 9999,
+                    border: 0,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    background:
+                      count === n ? "var(--brand-gold)" : "var(--ink-2)",
+                    color: count === n ? "var(--ink)" : "#fff",
+                    cursor: "pointer",
+                  }}
                 >
-                  Сколько тем
-                </label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {[3, 6, 9, 12].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setCount(n)}
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: 9999,
-                        border: 0,
-                        fontFamily: "var(--font-body)",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        background:
-                          count === n ? "var(--brand-gold)" : "var(--ink-2)",
-                        color: count === n ? "var(--ink)" : "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label
-                  className="eyebrow"
-                  style={{ display: "block", marginBottom: 8 }}
-                >
-                  Сегмент ЦА
-                </label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {SEGMENT_OPTIONS.map((s) => (
-                    <button
-                      key={s.v}
-                      onClick={() => setSegment(s.v)}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: 9999,
-                        border: 0,
-                        fontFamily: "var(--font-body)",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        background:
-                          segment === s.v ? "var(--brand-gold)" : "var(--ink-2)",
-                        color: segment === s.v ? "var(--ink)" : "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  {n}
+                </button>
+              ))}
             </div>
-            <button
-              className="btn-gold"
-              onClick={onGenerate}
-              disabled={isGenerating}
-              style={{ width: "100%", justifyContent: "center" }}
+          </div>
+          <div>
+            <label
+              className="eyebrow"
+              style={{ display: "block", marginBottom: 8 }}
             >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Думаю...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Сгенерировать {count} тем
-                </>
-              )}
-            </button>
-          </>
-        ) : (
+              Сегмент ЦА
+            </label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {SEGMENT_OPTIONS.map((s) => (
+                <button
+                  key={s.v}
+                  onClick={() => setSegment(s.v)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 9999,
+                    border: 0,
+                    fontFamily: "var(--font-body)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background:
+                      segment === s.v ? "var(--brand-gold)" : "var(--ink-2)",
+                    color: segment === s.v ? "var(--ink)" : "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {!cloudEnabled && (
+          <p style={{ fontSize: 12, color: "#ff9a7a", marginBottom: 12 }}>
+            Чтобы идеи сохранялись, включи синхронизацию в Настройках.
+          </p>
+        )}
+
+        {/* Кнопка генерации — сразу сохраняет и добавляет в раздел */}
+        <button
+          className="btn-gold"
+          onClick={onGenerate}
+          disabled={isGenerating || !cloudEnabled}
+          style={{ width: "100%", justifyContent: "center" }}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Думаю и добавляю...
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4" />
+              {hasDrafts
+                ? `Сгенерировать ещё ${count}`
+                : `Сгенерировать и добавить ${count}`}
+            </>
+          )}
+        </button>
+
+        {/* Что добавилось за сессию */}
+        {hasDrafts && (
           <>
-            <p
-              className="text-platinum"
-              style={{ fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}
+            <div
+              className="flex items-center"
+              style={{ gap: 8, margin: "22px 0 12px" }}
             >
-              Выбери темы, которые добавить в План. Остальные просто закроются.
-            </p>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "#3ecf8e",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                }}
+              >
+                <Check className="w-3.5 h-3.5" />
+                Добавлено в Идеи · {drafts.length}
+              </span>
+            </div>
             <div
               className="grid gap-2"
-              style={{ marginBottom: 20, maxHeight: 360, overflowY: "auto" }}
+              style={{ maxHeight: 320, overflowY: "auto", marginBottom: 18 }}
             >
-              {drafts.map((d, i) => {
-                const isSel = selected[i];
-                return (
+              {drafts.map((d, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: 14,
+                    borderRadius: 14,
+                    background: "var(--ink-2)",
+                    border: "1px solid rgba(62,207,142,0.2)",
+                  }}
+                >
                   <div
-                    key={i}
-                    onClick={() =>
-                      setSelected((s) => ({ ...s, [i]: !s[i] }))
-                    }
-                    style={{
-                      padding: 14,
-                      borderRadius: 14,
-                      background: isSel
-                        ? "rgba(212,168,67,0.10)"
-                        : "var(--ink-2)",
-                      border: isSel
-                        ? "1px solid rgba(212,168,67,0.4)"
-                        : "1px solid rgba(255,255,255,0.06)",
-                      cursor: "pointer",
-                      display: "flex",
-                      gap: 12,
-                      alignItems: "flex-start",
-                    }}
+                    className="flex items-center"
+                    style={{ gap: 8, marginBottom: 6 }}
                   >
-                    <div
+                    <span
+                      className="eyebrow"
+                      style={{ color: potentialColor(d.potential) }}
+                    >
+                      {d.potential}
+                    </span>
+                    <span
                       style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 5,
-                        marginTop: 2,
-                        flexShrink: 0,
-                        border: isSel
-                          ? "2px solid var(--brand-gold)"
-                          : "2px solid rgba(255,255,255,0.2)",
-                        background: isSel ? "var(--brand-gold)" : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        fontSize: 10,
+                        color: "var(--muted-foreground)",
+                        textTransform: "uppercase",
+                        letterSpacing: 1.2,
                       }}
                     >
-                      {isSel && (
-                        <Check
-                          className="w-3 h-3"
-                          style={{ color: "var(--ink)" }}
-                        />
-                      )}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        className="flex items-center"
-                        style={{ gap: 8, marginBottom: 6 }}
-                      >
-                        <span
-                          className="eyebrow"
-                          style={{ color: potentialColor(d.potential) }}
-                        >
-                          {d.potential}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: "var(--muted-foreground)",
-                            textTransform: "uppercase",
-                            letterSpacing: 1.2,
-                          }}
-                        >
-                          {d.format}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          lineHeight: 1.3,
-                          marginBottom: 6,
-                        }}
-                      >
-                        {d.title}
-                      </div>
-                      <p
-                        className="text-platinum"
-                        style={{ fontSize: 13, lineHeight: 1.45, margin: 0 }}
-                      >
-                        {d.reason}
-                      </p>
-                    </div>
+                      {d.format}
+                    </span>
                   </div>
-                );
-              })}
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 600,
+                      lineHeight: 1.3,
+                      marginBottom: 6,
+                    }}
+                  >
+                    {d.title}
+                  </div>
+                  <p
+                    className="text-platinum"
+                    style={{ fontSize: 13, lineHeight: 1.45, margin: 0 }}
+                  >
+                    {d.reason}
+                  </p>
+                </div>
+              ))}
             </div>
-            {!cloudEnabled && (
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "#ff9a7a",
-                  marginBottom: 12,
-                }}
-              >
-                Чтобы сохранить темы, включи синхронизацию в Настройках.
-              </p>
-            )}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={onGenerate}
-                disabled={isGenerating}
-                className="btn-gold"
-                style={{
-                  background: "var(--ink-2)",
-                  color: "#fff",
-                  flex: 1,
-                  justifyContent: "center",
-                }}
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Думаю...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Сгенерировать ещё
-                  </>
-                )}
-              </button>
-              <button
-                onClick={onSaveSelected}
-                disabled={isSaving || selectedCount === 0 || !cloudEnabled}
-                className="btn-gold"
-                style={{ flex: 1, justifyContent: "center" }}
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Сохраняю...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    Сохранить ({selectedCount})
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="btn-gold"
+              style={{
+                width: "100%",
+                justifyContent: "center",
+                background: "var(--ink-2)",
+                color: "#fff",
+              }}
+            >
+              Готово
+            </button>
           </>
         )}
       </div>
