@@ -13,7 +13,11 @@ import {
   ShieldCheck,
   AlertTriangle,
   Save,
+  Brain,
+  BarChart3,
+  ArrowRight,
 } from "lucide-react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
@@ -123,6 +127,11 @@ export default function ContentGenerator() {
     setRefinedOverrides((s) => ({ ...s, [key]: prev }));
     setRefineHistory((s) => ({ ...s, [key]: stack.slice(0, -1) }));
   };
+  /* Статистика «петли результата» — что подмешивается в промпт. */
+  const contextStats = trpc.content.contextStats.useQuery(
+    { workspaceKey },
+    { enabled: cloudEnabled, refetchOnWindowFocus: false },
+  );
   const validate = trpc.content.validateVoice.useQuery(
     { text: voiceText || "placeholder text for validation rule check" },
     { enabled: voiceText.length >= 20 }
@@ -227,6 +236,13 @@ export default function ContentGenerator() {
             релевантные хештеги и подпись. Голос настроен под Эдуарда: всегда «ты»,
             без канцеляризмов, без декоративных эмодзи.
           </p>
+
+          {/* Петля результата: badge показывает, что генератор учитывает
+              реальные данные пользователя (его метрики + анализ конкурентов).
+              Если данных нет — мягкая подсказка как их добавить. */}
+          {cloudEnabled && contextStats.data && (
+            <ContextLoopBadge stats={contextStats.data} />
+          )}
         </div>
       </section>
 
@@ -983,6 +999,93 @@ export default function ContentGenerator() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Бэйдж «петли результата» — показывается под описанием Студии и
+   делает видимым, какие данные подмешиваются в системный промпт:
+   - сколько твоих постов учитывается (топ/худшие из post_metrics)
+   - сколько проанализированных конкурентов даёт recommendations
+   Если данных нет — мягкая инструкция как заполнить (linkки на разделы). */
+function ContextLoopBadge({
+  stats,
+}: {
+  stats: { metrics: number; competitors: number; enabled: boolean };
+}) {
+  const { metrics, competitors, enabled } = stats;
+  if (enabled) {
+    const parts: string[] = [];
+    if (metrics >= 3) parts.push(`${metrics} твоих постов`);
+    if (competitors > 0)
+      parts.push(`${competitors} ${competitors === 1 ? "конкурента" : "конкурентов"}`);
+    return (
+      <div
+        style={{
+          marginTop: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 16px",
+          borderRadius: 14,
+          background: "rgba(62,207,142,0.08)",
+          border: "1px solid rgba(62,207,142,0.25)",
+          color: "#3ecf8e",
+          fontSize: 13,
+          lineHeight: 1.4,
+        }}
+        title="Эти данные подмешиваются в системный промпт перед каждой генерацией"
+      >
+        <Brain className="w-4 h-4" style={{ flexShrink: 0 }} />
+        <span>
+          <strong style={{ fontWeight: 700 }}>Петля включена:</strong> учитываю{" "}
+          {parts.join(" + ")} при генерации.
+        </span>
+      </div>
+    );
+  }
+  /* Петля выключена — мягко зову заполнить данные. */
+  return (
+    <div
+      style={{
+        marginTop: 20,
+        padding: "12px 16px",
+        borderRadius: 14,
+        background: "rgba(212,168,67,0.06)",
+        border: "1px solid rgba(212,168,67,0.18)",
+        display: "flex",
+        gap: 12,
+        flexWrap: "wrap",
+        alignItems: "center",
+        fontSize: 13,
+        lineHeight: 1.4,
+      }}
+    >
+      <Brain
+        className="w-4 h-4"
+        style={{ color: "var(--brand-gold)", flexShrink: 0 }}
+      />
+      <span className="text-platinum" style={{ flex: 1, minWidth: 200 }}>
+        Чтобы генератор учился на твоих результатах, заполни метрики
+        постов и проанализируй пару конкурентов.
+      </span>
+      <Link href="/analytics">
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            color: "var(--brand-gold)",
+            fontWeight: 600,
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          Открыть Аналитику
+          <ArrowRight className="w-3.5 h-3.5" />
+        </span>
+      </Link>
     </div>
   );
 }

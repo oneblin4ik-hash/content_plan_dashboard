@@ -14,6 +14,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 
@@ -124,6 +125,7 @@ function TabBtn({
    ============================================================ */
 function CompetitorsSection() {
   const { cloudEnabled } = useWorkspace();
+  const [, navigate] = useLocation();
   const list = trpc.competitors.list.useQuery(undefined, {
     enabled: cloudEnabled,
   });
@@ -325,6 +327,17 @@ function CompetitorsSection() {
                 isAnalyzing={
                   analyze.isPending && analyzingId === c.id
                 }
+                onUseRecommendation={(rec) => {
+                  /* Deep-link в Студию с темой, собранной из имени
+                     конкурента и текста рекомендации. Промпт через
+                     callLLM уже подмешивает полные рекомендации, так
+                     что здесь нужен только осмысленный заголовок. */
+                  const trimmed = rec.length > 80 ? `${rec.slice(0, 80)}…` : rec;
+                  const title = `По мотивам @${c.handle}: ${trimmed}`;
+                  navigate(
+                    `/generator?title=${encodeURIComponent(title)}&mode=post`,
+                  );
+                }}
               />
             ))}
           </div>
@@ -396,11 +409,13 @@ function CompetitorCard({
   onAnalyze,
   onRemove,
   isAnalyzing,
+  onUseRecommendation,
 }: {
   channel: CompetitorChannel;
   onAnalyze: () => void;
   onRemove: () => void;
   isAnalyzing: boolean;
+  onUseRecommendation: (rec: string) => void;
 }) {
   const platformIcon =
     channel.platform === "tg" ? (
@@ -585,6 +600,8 @@ function CompetitorCard({
             label="Как использовать"
             items={channel.analysis.recommendations_for_serbolin}
             accent
+            onItemAction={onUseRecommendation}
+            itemActionLabel="Сделать пост по этой рекомендации"
           />
           {channel.lastAnalyzedAt && (
             <div
@@ -724,11 +741,17 @@ function ReportList({
   items,
   accent,
   inline,
+  onItemAction,
+  itemActionLabel,
 }: {
   label: string;
   items: string[];
   accent?: boolean;
   inline?: boolean;
+  /* Опциональная per-item кнопка справа от пункта (для рекомендаций
+     конкурентов — «Сделать пост по этому»). */
+  onItemAction?: (item: string) => void;
+  itemActionLabel?: string;
 }) {
   if (!items || items.length === 0) return null;
   return (
@@ -771,8 +794,33 @@ function ReportList({
           }}
         >
           {items.map((it, i) => (
-            <li key={i} style={{ marginBottom: 3 }}>
+            <li key={i} style={{ marginBottom: 6 }}>
               {it}
+              {onItemAction && (
+                <button
+                  onClick={() => onItemAction(it)}
+                  title={itemActionLabel ?? "Сделать пост по этому"}
+                  style={{
+                    marginLeft: 6,
+                    background: "rgba(212,168,67,0.18)",
+                    border: "1px solid rgba(212,168,67,0.4)",
+                    color: "var(--brand-gold)",
+                    padding: "2px 8px",
+                    borderRadius: 9999,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    letterSpacing: 0.4,
+                    verticalAlign: "middle",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  В пост
+                </button>
+              )}
             </li>
           ))}
         </ul>

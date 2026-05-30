@@ -3,6 +3,7 @@ import { publicProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { SERBOLIN_SYSTEM_PROMPT as SERBOLIN_SYSTEM } from "../_core/brand-knowledge";
 import { loadVoiceCtx } from "../_core/voice";
+import { loadPerformanceContext, getPerformanceContextStats } from "../_core/performance";
 
 /* ============================================================
    Content Studio — Mr. Serbolin
@@ -109,10 +110,19 @@ const callLLM = async (
   user: string,
   workspaceKey?: string | null,
 ): Promise<{ text: string; model: string }> => {
-  const voiceCtx = await loadVoiceCtx(workspaceKey);
+  /* Петля результата: к голосовому профилю канала подмешиваем «что
+     зашло / не зашло у тебя» (из post_metrics) и приёмы конкурентов
+     (recommendations_for_serbolin из competitor_channels.analysis_json).
+     Оба запроса параллельные и read-only — если D1 чихнёт, генерация
+     всё равно идёт, просто без подмешивания. */
+  const [voiceCtx, perfCtx] = await Promise.all([
+    loadVoiceCtx(workspaceKey),
+    loadPerformanceContext(workspaceKey),
+  ]);
+  const fullSystem = `${system}${voiceCtx}${perfCtx}`;
   const r = await invokeLLM({
     messages: [
-      { role: "system", content: voiceCtx ? `${system}${voiceCtx}` : system },
+      { role: "system", content: fullSystem },
       { role: "user", content: user },
     ],
   });
@@ -126,7 +136,17 @@ const callLLM = async (
 
 const wsKeyOptional = z.string().min(8).max(64).optional();
 
+/* Лёгкий endpoint для UI Студии — показывает badge «учитывает N
+   твоих постов и K конкурентов». Помогает юзеру понять, что петля
+   работает (или что её нужно «заполнить» — внести метрики /
+   проанализировать конкурентов). */
+const contextStatsProcedure = publicProcedure
+  .input(z.object({ workspaceKey: wsKeyOptional }))
+  .query(({ input }) => getPerformanceContextStats(input.workspaceKey));
+
 export const contentRouter = router({
+  contextStats: contextStatsProcedure,
+
   /* ---------- POST ---------- */
   generatePost: publicProcedure
     .input(
