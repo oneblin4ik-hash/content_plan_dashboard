@@ -3,6 +3,8 @@ import {
   Brain,
   Plus,
   Trash2,
+  Pencil,
+  Check,
   Loader2,
   Users,
   BarChart3,
@@ -881,6 +883,22 @@ function RealMetricsSection() {
   const [form, setForm] = useState<LocalMetricForm>(EMPTY_FORM);
   const [windowDays, setWindowDays] = useState(30);
 
+  /* Inline-правка цифр метрики: при клике на иконку карандаша в
+     строке таблицы — открывается редактор всех counter'ов + notes. */
+  const update = trpc.metrics.update.useMutation({
+    onSuccess: () => list.refetch(),
+    onError: (e) => toast.error(e.message),
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    views: "",
+    reactions: "",
+    comments: "",
+    saves: "",
+    shares: "",
+    notes: "",
+  });
+
   if (!cloudEnabled) {
     return (
       <section className="container py-12">
@@ -1223,18 +1241,47 @@ function RealMetricsSection() {
                 : m.erPercent >= 4
                   ? "var(--brand-gold)"
                   : "var(--brand-platinum)";
+            const isEditing = editingId === m.id;
+            const numInput = (
+              key: keyof typeof editForm,
+              w = 60,
+            ) => (
+              <input
+                type="number"
+                min={0}
+                value={editForm[key]}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, [key]: e.target.value }))
+                }
+                style={{
+                  width: w,
+                  background: "var(--ink-3)",
+                  color: "#fff",
+                  border: "1px solid rgba(212,168,67,0.4)",
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  fontSize: 12,
+                  fontFamily: "var(--font-body)",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              />
+            );
             return (
               <div
                 key={m.id}
                 style={{
                   display: "grid",
                   gridTemplateColumns:
-                    "1fr 80px 100px 70px 70px 70px 70px 70px 70px 40px",
+                    "1fr 80px 100px 80px 70px 70px 70px 70px 70px 70px",
                   gap: 0,
                   alignItems: "center",
                   fontSize: 13,
                   padding: "12px 16px",
                   borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  background: isEditing
+                    ? "rgba(212,168,67,0.06)"
+                    : undefined,
                 }}
               >
                 <div
@@ -1264,19 +1311,19 @@ function RealMetricsSection() {
                 <div style={{ fontSize: 12, opacity: 0.7 }}>{m.postType}</div>
                 <div style={{ fontSize: 12, opacity: 0.7 }}>{dateStr}</div>
                 <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                  {m.views.toLocaleString("ru-RU")}
+                  {isEditing ? numInput("views", 80) : m.views.toLocaleString("ru-RU")}
                 </div>
                 <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
-                  {m.reactions}
+                  {isEditing ? numInput("reactions") : m.reactions}
                 </div>
                 <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
-                  {m.comments}
+                  {isEditing ? numInput("comments") : m.comments}
                 </div>
                 <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
-                  {m.saves}
+                  {isEditing ? numInput("saves") : m.saves}
                 </div>
                 <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
-                  {m.shares}
+                  {isEditing ? numInput("shares") : m.shares}
                 </div>
                 <div
                   style={{
@@ -1288,24 +1335,104 @@ function RealMetricsSection() {
                 >
                   {m.erPercent}%
                 </div>
-                <button
-                  onClick={() => {
-                    if (!workspaceKey) return;
-                    if (!confirm(`Удалить «${m.postTitle.slice(0, 40)}»?`)) return;
-                    del.mutate({ workspaceKey, id: m.id });
-                  }}
-                  style={{
-                    background: "transparent",
-                    border: 0,
-                    color: "var(--brand-platinum)",
-                    opacity: 0.5,
-                    cursor: "pointer",
-                    padding: 0,
-                  }}
-                  title="Удалить"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (!workspaceKey) return;
+                          update.mutate({
+                            workspaceKey,
+                            id: m.id,
+                            views: parseInt(editForm.views || "0", 10) || 0,
+                            reactions: parseInt(editForm.reactions || "0", 10) || 0,
+                            comments: parseInt(editForm.comments || "0", 10) || 0,
+                            saves: parseInt(editForm.saves || "0", 10) || 0,
+                            shares: parseInt(editForm.shares || "0", 10) || 0,
+                            notes: editForm.notes || undefined,
+                          });
+                          setEditingId(null);
+                        }}
+                        title="Сохранить"
+                        style={{
+                          background: "var(--brand-gold)",
+                          color: "var(--ink)",
+                          border: 0,
+                          borderRadius: 9999,
+                          width: 24,
+                          height: 24,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        title="Отмена"
+                        style={{
+                          background: "transparent",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "var(--muted-foreground)",
+                          borderRadius: 9999,
+                          width: 24,
+                          height: 24,
+                          cursor: "pointer",
+                          fontSize: 11,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setEditForm({
+                            views: String(m.views),
+                            reactions: String(m.reactions),
+                            comments: String(m.comments),
+                            saves: String(m.saves),
+                            shares: String(m.shares),
+                            notes: m.notes ?? "",
+                          });
+                        }}
+                        title="Править цифры"
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: "var(--brand-platinum)",
+                          opacity: 0.5,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!workspaceKey) return;
+                          if (!confirm(`Удалить «${m.postTitle.slice(0, 40)}»?`)) return;
+                          del.mutate({ workspaceKey, id: m.id });
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: "var(--brand-platinum)",
+                          opacity: 0.5,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}

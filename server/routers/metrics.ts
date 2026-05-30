@@ -126,6 +126,42 @@ export const metricsRouter = router({
       return { id, createdAt: now };
     }),
 
+  /* Inline-правка: пользователь часто ошибается в цифрах при ручном
+     вводе (или донабирает данные через сутки). Меняем только counter'ы
+     и notes — title/type/platform/topic нечего править: ошибся —
+     быстрее удалить и завести заново. */
+  update: publicProcedure
+    .input(
+      z.object({
+        workspaceKey: wsKey,
+        id: z.string(),
+        views: z.number().int().min(0),
+        reactions: z.number().int().min(0),
+        comments: z.number().int().min(0),
+        saves: z.number().int().min(0),
+        shares: z.number().int().min(0),
+        notes: z.string().max(1000).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      await d1Execute(
+        `UPDATE post_metrics
+           SET views = ?, reactions = ?, comments = ?, saves = ?, shares = ?, notes = ?
+         WHERE workspace_key = ? AND id = ?`,
+        [
+          input.views,
+          input.reactions,
+          input.comments,
+          input.saves,
+          input.shares,
+          input.notes ?? null,
+          input.workspaceKey,
+          input.id,
+        ],
+      );
+      return { ok: true };
+    }),
+
   delete: publicProcedure
     .input(z.object({ workspaceKey: wsKey, id: z.string() }))
     .mutation(async ({ input }) => {

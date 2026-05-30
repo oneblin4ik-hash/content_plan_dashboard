@@ -53,12 +53,17 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
   });
   const cloudSchedule = trpc.sync.scheduled.save.useMutation();
 
-  const addToPlan = (item: LibraryItem) => {
-    /* Идея #2: ставим в календарь на завтра по умолчанию,
-       формат подтягиваем из mode. Пользователь дальше двигает DnD. */
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const date = tomorrow.toISOString().slice(0, 10);
+  /* Дата выбирается через inline date-picker рядом с кнопкой (см. ниже).
+     Если не передана — по умолчанию завтра (старое поведение, для
+     обратной совместимости). */
+  const addToPlan = (item: LibraryItem, dateStr?: string) => {
+    const date =
+      dateStr ||
+      (() => {
+        const t = new Date();
+        t.setDate(t.getDate() + 1);
+        return t.toISOString().slice(0, 10);
+      })();
     const format =
       item.mode === "reels"
         ? "Reels"
@@ -84,7 +89,16 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
       });
       toast.success(`В план на ${date}`);
     }
+    setSchedulingId(null);
   };
+
+  /* Локальный state: какой item сейчас выбирает дату. */
+  const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [schedulingDate, setSchedulingDate] = useState<string>(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return t.toISOString().slice(0, 10);
+  });
 
   useEffect(() => {
     if (!cloudEnabled) setLocalItems(localLibrary.load());
@@ -318,19 +332,73 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
                         {copied === it.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         Копировать
                       </button>
-                      <button
-                        onClick={() => addToPlan(it)}
-                        className="btn-gold"
-                        style={{
-                          padding: "8px 12px",
-                          fontSize: 12,
-                          justifyContent: "center",
-                        }}
-                        title="Поставить в календарь на завтра"
-                      >
-                        <CalendarPlus className="w-3 h-3" />
-                        В план
-                      </button>
+                      {schedulingId === it.id ? (
+                        /* Раскрытый выбор даты: input type=date + ✓ */
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 4,
+                            alignItems: "center",
+                          }}
+                        >
+                          <input
+                            type="date"
+                            value={schedulingDate}
+                            onChange={(e) => setSchedulingDate(e.target.value)}
+                            autoFocus
+                            style={{
+                              background: "var(--ink-3)",
+                              color: "#fff",
+                              border: "1px solid rgba(212,168,67,0.4)",
+                              borderRadius: 9999,
+                              padding: "6px 10px",
+                              fontSize: 12,
+                              fontFamily: "var(--font-body)",
+                              colorScheme: "dark",
+                            }}
+                          />
+                          <button
+                            onClick={() => addToPlan(it, schedulingDate)}
+                            className="btn-gold"
+                            style={{
+                              padding: "8px 10px",
+                              fontSize: 12,
+                            }}
+                            title="Подтвердить"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => setSchedulingId(null)}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid rgba(255,255,255,0.08)",
+                              borderRadius: 9999,
+                              padding: "6px 10px",
+                              color: "var(--muted-foreground)",
+                              cursor: "pointer",
+                              fontSize: 12,
+                            }}
+                            title="Отмена"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSchedulingId(it.id)}
+                          className="btn-gold"
+                          style={{
+                            padding: "8px 12px",
+                            fontSize: 12,
+                            justifyContent: "center",
+                          }}
+                          title="Выбрать дату публикации"
+                        >
+                          <CalendarPlus className="w-3 h-3" />
+                          В план
+                        </button>
+                      )}
                       <button
                         onClick={() => remove(it.id)}
                         style={{

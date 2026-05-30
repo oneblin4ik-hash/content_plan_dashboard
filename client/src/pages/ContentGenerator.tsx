@@ -477,6 +477,7 @@ export default function ContentGenerator() {
                 sendPostTG.mutate({
                   title,
                   content: String((pack.data as Record<string, unknown>).post),
+                  workspaceKey,
                 })
               }
             />
@@ -492,6 +493,7 @@ export default function ContentGenerator() {
                 sendPostTG.mutate({
                   title: post.data!.title,
                   content: refinedOverrides.post ?? post.data!.post,
+                  workspaceKey,
                 })
               }
             />
@@ -507,6 +509,7 @@ export default function ContentGenerator() {
                 sendReelsTG.mutate({
                   title: reels.data!.title,
                   script: refinedOverrides.reels ?? reels.data!.script,
+                  workspaceKey,
                 })
               }
             />

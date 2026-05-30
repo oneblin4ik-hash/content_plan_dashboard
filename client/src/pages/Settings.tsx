@@ -1,6 +1,20 @@
 import { useState } from "react";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
-import { Copy, Check, KeyRound, RefreshCw, CloudOff, Cloud } from "lucide-react";
+import {
+  Copy,
+  Check,
+  KeyRound,
+  RefreshCw,
+  CloudOff,
+  Cloud,
+  Send,
+  Plus,
+  Trash2,
+  Loader2,
+  Star,
+} from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 export default function Settings() {
   const { workspaceKey, setWorkspaceKey, generateNew, cloudEnabled } = useWorkspace();
@@ -178,6 +192,235 @@ export default function Settings() {
           </div>
         </div>
       </section>
+
+      {cloudEnabled && <TelegramChatsSection />}
     </div>
+  );
+}
+
+/* Управление Telegram-каналами для публикации. Несколько каналов на
+   workspace, один помечен default — именно в него уходит кнопка
+   «Отправить в Telegram» из Студии, если юзер не выбрал явно другой.
+   При добавлении бот валидирует доступ через getChat — частая ошибка
+   «бот не админ канала» ловится сразу. */
+function TelegramChatsSection() {
+  const { workspaceKey } = useWorkspace();
+  const list = trpc.telegram.chats.list.useQuery(
+    { workspaceKey },
+    { enabled: !!workspaceKey },
+  );
+  const addChat = trpc.telegram.chats.add.useMutation({
+    onSuccess: (r) => {
+      list.refetch();
+      toast.success(`Канал добавлен: ${r.title ?? r.chatId}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const setDefault = trpc.telegram.chats.setDefault.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+  const delChat = trpc.telegram.chats.delete.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+
+  const [newChat, setNewChat] = useState("");
+  const chats = list.data ?? [];
+
+  const handleAdd = () => {
+    const cleaned = newChat
+      .trim()
+      .replace(/^https?:\/\/t\.me\//i, "@")
+      .replace(/\/$/, "");
+    if (!cleaned) return;
+    addChat.mutate({
+      workspaceKey,
+      chatId: cleaned,
+      makeDefault: chats.length === 0,
+    });
+    setNewChat("");
+  };
+
+  return (
+    <section style={{ padding: "0 0 96px" }}>
+      <div className="container">
+        <div className="bento-card" style={{ padding: 28 }}>
+          <div className="flex items-center" style={{ gap: 10, marginBottom: 6 }}>
+            <Send className="w-5 h-5" style={{ color: "var(--brand-gold)" }} />
+            <h2 style={{ fontSize: 22, margin: 0, letterSpacing: "-0.4px" }}>
+              Telegram-каналы для отправки
+            </h2>
+          </div>
+          <p
+            className="text-platinum"
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              marginBottom: 18,
+              maxWidth: 720,
+            }}
+          >
+            Добавь канал(ы), куда из Студии будет улетать кнопка
+            «Отправить в Telegram». Для каждого: <strong>бот должен быть
+            админом канала</strong> с правом «Отправлять сообщения». Иначе при
+            добавлении вернётся ошибка от Telegram. Формат: <code>@username</code>
+            {" "}публичного канала или <code>-1001234567890</code> приватного.
+            Звёздочкой помечен дефолтный канал.
+          </p>
+
+          <div
+            className="flex gap-2"
+            style={{ marginBottom: 16, flexWrap: "wrap" }}
+          >
+            <input
+              value={newChat}
+              onChange={(e) => setNewChat(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              placeholder="@mychannel или -1001234567890"
+              style={{
+                flex: 1,
+                minWidth: 240,
+                background: "var(--ink-3)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 9999,
+                padding: "10px 16px",
+                fontFamily: "var(--font-body)",
+                fontSize: 14,
+              }}
+            />
+            <button
+              onClick={handleAdd}
+              disabled={addChat.isPending || !newChat.trim()}
+              className="btn-gold"
+              style={{ padding: "10px 18px" }}
+            >
+              {addChat.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Добавить
+            </button>
+          </div>
+
+          {list.isLoading ? (
+            <div className="text-platinum" style={{ fontSize: 13 }}>
+              <Loader2
+                className="w-4 h-4 animate-spin"
+                style={{ display: "inline", marginRight: 8 }}
+              />
+              Загружаю...
+            </div>
+          ) : chats.length === 0 ? (
+            <div
+              className="text-platinum"
+              style={{ fontSize: 13, opacity: 0.7 }}
+            >
+              Пока нет добавленных каналов. Без них «Отправить в Telegram»
+              в Студии будет использовать чат из переменной TELEGRAM_CHAT_ID
+              (если задана).
+            </div>
+          ) : (
+            <div
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              }}
+            >
+              {chats.map((c) => (
+                <div
+                  key={c.id}
+                  style={{
+                    padding: "12px 14px",
+                    background: c.isDefault
+                      ? "rgba(212,168,67,0.08)"
+                      : "var(--ink-2)",
+                    border: c.isDefault
+                      ? "1px solid rgba(212,168,67,0.4)"
+                      : "1px solid rgba(255,255,255,0.06)",
+                    borderRadius: 12,
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    onClick={() =>
+                      !c.isDefault &&
+                      setDefault.mutate({ workspaceKey, id: c.id })
+                    }
+                    title={
+                      c.isDefault ? "Уже дефолтный" : "Сделать дефолтным"
+                    }
+                    style={{
+                      background: "transparent",
+                      border: 0,
+                      color: c.isDefault
+                        ? "var(--brand-gold)"
+                        : "var(--muted-foreground)",
+                      cursor: c.isDefault ? "default" : "pointer",
+                      padding: 4,
+                      lineHeight: 0,
+                    }}
+                  >
+                    <Star
+                      className="w-4 h-4"
+                      style={{
+                        fill: c.isDefault ? "var(--brand-gold)" : "none",
+                      }}
+                    />
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#fff",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {c.title ?? c.chatId}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--muted-foreground)",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {c.chatId}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Убрать «${c.title ?? c.chatId}» из списка? Сами сообщения в Telegram не удалятся.`,
+                        )
+                      ) {
+                        delChat.mutate({ workspaceKey, id: c.id });
+                      }
+                    }}
+                    title="Убрать"
+                    style={{
+                      background: "transparent",
+                      border: 0,
+                      color: "var(--muted-foreground)",
+                      cursor: "pointer",
+                      padding: 4,
+                      lineHeight: 0,
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
