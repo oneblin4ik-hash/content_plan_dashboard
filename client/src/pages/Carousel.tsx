@@ -17,6 +17,7 @@ import {
   Layers,
   Palette,
   Type as TypeIcon,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -36,6 +37,13 @@ type Slide = {
   kind: SlideKind;
   headline: string;
   body: string;
+  /* Фоновое фото. Храним dataURL (data:image/...;base64,...) —
+     это снимает CORS-проблемы при экспорте через html-to-image и
+     гарантирует, что превью и экспорт идентичны. Файлы конвертим
+     через FileReader, внешние URL — через fetch+FileReader. */
+  imageUrl?: string;
+  /* Затемнение фото 0..1 (для читаемости текста на ярких фото). */
+  overlay?: number;
 };
 
 type Theme = {
@@ -140,6 +148,43 @@ const ACCENT_SWATCHES = [
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* Лимит на фото — чтобы payload карусели не раздулся в D1 и не вылетел
+   за лимит строки (1 MB). 4 MB исходника после base64 ≈ 5.3 MB; для
+   обложки этого с запасом, а тяжёлые DSLR-снимки не нужны. */
+const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+const ALLOWED_MIME = /^image\/(jpeg|jpg|png|webp)$/i;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("Не удалось прочитать файл"));
+    r.readAsDataURL(file);
+  });
+}
+
+/* Берём чужую картинку и конвертим в dataURL: иначе html-to-image
+   получает tainted canvas (CORS) и экспорт PNG падает. Если fetch
+   не пройдёт (CORS / 404) — возвращаем исходный URL, превью покажет,
+   но при экспорте может ругнуться. */
+async function urlToDataUrl(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (!ALLOWED_MIME.test(blob.type)) {
+      throw new Error(`Не картинка: ${blob.type || "unknown"}`);
+    }
+    if (blob.size > MAX_PHOTO_BYTES) {
+      throw new Error(`Файл больше 4 MB`);
+    }
+    const file = new File([blob], "remote", { type: blob.type });
+    return await fileToDataUrl(file);
+  } catch {
+    return url;
+  }
+}
 
 const SEGMENTS = [
   { v: "mixed", label: "Смешанная" },
@@ -801,6 +846,11 @@ export default function Carousel() {
                         style={editAreaStyle}
                       />
                     </Field>
+
+                    <PhotoField
+                      slide={current}
+                      onChange={(patch) => updateSlide(selected, patch)}
+                    />
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 18 }}>
@@ -997,6 +1047,8 @@ function SlideCanvas({
   const bodySize = (isCover ? 34 : 30) * u;
   const kickerSize = 22 * u;
 
+  const overlayAlpha = slide.imageUrl ? (slide.overlay ?? 0.4) : 0;
+
   return (
     <div
       style={{
@@ -1015,6 +1067,38 @@ function SlideCanvas({
         fontFamily: theme.fontBody,
       }}
     >
+      {/* Фоновое фото + затемнение под текст. crossOrigin="anonymous"
+          + decoding="sync" — на dataURL не влияет, но не вредит, если
+          вдруг пришёл внешний URL. */}
+      {slide.imageUrl && (
+        <>
+          <img
+            src={slide.imageUrl}
+            alt=""
+            crossOrigin="anonymous"
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              zIndex: 0,
+            }}
+          />
+          {overlayAlpha > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: `linear-gradient(180deg, rgba(0,0,0,${overlayAlpha * 0.7}) 0%, rgba(0,0,0,${overlayAlpha}) 100%)`,
+                zIndex: 1,
+              }}
+            />
+          )}
+          {/* Поверх — невидимый слой, чтобы контент рендерился над фото. */}
+        </>
+      )}
+
       {/* Верхний kicker */}
       <div
         style={{
@@ -1026,6 +1110,7 @@ function SlideCanvas({
           left: isCover ? pad : undefined,
           right: isCover ? pad : undefined,
           marginBottom: isCover ? 0 : 40 * u,
+          zIndex: 2,
         }}
       >
         <span
@@ -1062,6 +1147,8 @@ function SlideCanvas({
           display: "flex",
           flexDirection: "column",
           justifyContent: isCover ? "center" : "flex-start",
+          position: "relative",
+          zIndex: 2,
         }}
       >
         {/* Акцентная полоса у обложки */}
@@ -1133,6 +1220,7 @@ function SlideCanvas({
             fontSize: kickerSize,
             fontWeight: 600,
             color: theme.body,
+            zIndex: 2,
           }}
         >
           {handle}
@@ -1143,6 +1231,198 @@ function SlideCanvas({
 }
 
 /* ---------- мелкие UI-хелперы ---------- */
+/* Поле «Фоновое фото» в правой панели слайда. Принимает либо URL
+   картинки (jpg/png/webp), либо файл с диска. Оба варианта конвертим
+   в dataURL — это нужно, чтобы экспорт PNG через html-to-image не
+   падал из-за tainted canvas. Снизу — выбор затемнения для
+   читаемости текста на ярких фото. */
+function PhotoField({
+  slide,
+  onChange,
+}: {
+  slide: Slide;
+  onChange: (patch: Partial<Slide>) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const applyUrl = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    try {
+      const dataUrl = await urlToDataUrl(trimmed);
+      onChange({ imageUrl: dataUrl });
+      setUrl("");
+      if (dataUrl === trimmed) {
+        toast.warning(
+          "Не смог проксировать URL — превью покажет, но при экспорте PNG может ругнуться (CORS). Если так — скачай фото и загрузи файлом.",
+        );
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Не удалось загрузить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyFile = async (file: File) => {
+    if (!ALLOWED_MIME.test(file.type)) {
+      toast.error("Только JPG, PNG или WebP");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error("Файл больше 4 МБ — сожми и попробуй ещё раз");
+      return;
+    }
+    setBusy(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      onChange({ imageUrl: dataUrl });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Не удалось прочитать");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const overlay = slide.overlay ?? 0.4;
+  const overlayPresets = [
+    { v: 0, label: "Без" },
+    { v: 0.3, label: "Лёгкое" },
+    { v: 0.55, label: "Среднее" },
+    { v: 0.75, label: "Сильное" },
+  ];
+
+  return (
+    <Field label="Фоновое фото">
+      {slide.imageUrl ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          {/* Превью + кнопка убрать */}
+          <div
+            style={{
+              position: "relative",
+              borderRadius: 12,
+              overflow: "hidden",
+              background: "var(--ink-3)",
+              aspectRatio: "4 / 3",
+            }}
+          >
+            <img
+              src={slide.imageUrl}
+              alt="Фото слайда"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+            <button
+              onClick={() => onChange({ imageUrl: undefined })}
+              title="Убрать фото"
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                background: "rgba(0,0,0,0.7)",
+                border: 0,
+                color: "#fff",
+                borderRadius: 9999,
+                width: 28,
+                height: 28,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div>
+            <div
+              className="eyebrow"
+              style={{ marginBottom: 6, fontSize: 10 }}
+            >
+              Затемнение для текста
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {overlayPresets.map((p) => (
+                <Chip
+                  key={p.v}
+                  active={Math.abs(overlay - p.v) < 0.01}
+                  onClick={() => onChange({ overlay: p.v })}
+                >
+                  {p.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyUrl()}
+              placeholder="https://… (URL картинки)"
+              style={{ ...editInputStyle, flex: 1 }}
+            />
+            <button
+              onClick={applyUrl}
+              disabled={busy || !url.trim()}
+              className="btn-gold"
+              style={{ padding: "8px 14px", fontSize: 12 }}
+            >
+              {busy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                "Добавить"
+              )}
+            </button>
+          </div>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            className="btn-gold"
+            style={{
+              background: "var(--ink-2)",
+              color: "#fff",
+              justifyContent: "center",
+              padding: "10px 14px",
+              fontSize: 13,
+            }}
+          >
+            {busy ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Читаю…
+              </>
+            ) : (
+              <>
+                <ImageIcon className="w-4 h-4" /> Загрузить файл (JPG/PNG/WebP)
+              </>
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) applyFile(f);
+            }}
+          />
+        </div>
+      )}
+    </Field>
+  );
+}
+
 function Chip({
   active,
   onClick,
