@@ -15,6 +15,7 @@ type Env = {
      Через него server/_core/d1.ts делает batch без HTTP-subrequests. */
   DB?: unknown;
   JWT_SECRET?: string;
+  ADMIN_EMAILS?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_D1_DATABASE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
@@ -117,6 +118,16 @@ async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
     );
     const u = rows[0];
     if (!u) return null;
+    /* Админ = email в ADMIN_EMAILS (CSV, env-секрет). Никакого UI
+       для назначения админов — добавляются только через wrangler secret. */
+    const adminList = (process.env.ADMIN_EMAILS ?? "")
+      .toLowerCase()
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const role: "user" | "admin" = adminList.includes(u.email.toLowerCase())
+      ? "admin"
+      : "user";
     return {
       id: u.id,
       email: u.email,
@@ -124,7 +135,7 @@ async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
       plan: u.plan,
       trialEndsAt: u.trial_ends_at,
       tokensRemaining: u.tokens_remaining,
-      role: "user",
+      role,
     };
   } catch {
     return null;

@@ -21,6 +21,7 @@ export type AuthUser = {
   plan: string;
   trialEndsAt: number;
   tokensRemaining: number;
+  role: "user" | "admin";
 };
 
 type Ctx = {

@@ -39,6 +39,10 @@ async function loadUserVoice(userId: string): Promise<VoiceConfig | null> {
 }
 
 function assertCanGenerate(user: AuthUser) {
+  /* Админу — безлимит: не проверяем триал и баланс, не списываем
+     токены. Чтобы я мог пользоваться сервисом, не тратя пробный
+     бюджет, и тестировать долгие LLM-сессии без оглядки на лимит. */
+  if (user.role === "admin") return;
   const now = Date.now();
   if (user.plan === "trial" && user.trialEndsAt < now) {
     throw new TRPCError({
@@ -99,6 +103,10 @@ export async function invokeForUser(
   const used =
     r.usage?.total_tokens ??
     Math.max(200, Math.ceil(fullSystem.length / 3 + out.length / 3));
+  /* Админу токены не списываем — у него безлимит. tokens_used_total
+     обычным юзерам нужен для будущей аналитики/биллинга, админу
+     бессмысленно (его генерации не считаются «продуктом»). */
+  if (user.role === "admin") return { text: out, model };
   try {
     await d1Execute(
       "UPDATE users SET tokens_remaining = MAX(0, tokens_remaining - ?), tokens_used_total = tokens_used_total + ? WHERE id = ?",

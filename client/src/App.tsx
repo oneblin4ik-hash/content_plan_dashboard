@@ -19,6 +19,7 @@ import Media from "./pages/Media";
 import Integrations from "./pages/Integrations";
 import Voice from "./pages/Voice";
 import Pricing from "./pages/Pricing";
+import Admin from "./pages/Admin";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import { PersonalDataConsent, Terms, Privacy } from "./pages/Legal";
@@ -92,6 +93,7 @@ function Router() {
       <Route path="/integrations" component={Integrations} />
       <Route path="/settings" component={Settings} />
       <Route path="/pricing" component={Pricing} />
+      <Route path="/admin" component={Admin} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

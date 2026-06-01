@@ -167,6 +167,7 @@ export const authRouter = router({
       plan: ctx.user.plan,
       trialEndsAt: ctx.user.trialEndsAt,
       tokensRemaining: ctx.user.tokensRemaining,
+      role: ctx.user.role,
     };
   }),
 

@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
-  TrendingUp, Image as ImageIcon, Link2, Layers, LogOut, MessageCircle, CreditCard,
+  TrendingUp, Image as ImageIcon, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -89,7 +89,13 @@ function NavChip({
 export default function Navigation() {
   const [location] = useLocation();
   const { user, signOut } = useAuth();
-  const all = [...primary, ...utility];
+  /* Утилитные пункты для админа: добавляем «Админ» в начало utility,
+     чтобы кнопка была заметной, но не теснила primary-навигацию. */
+  const utilityForUser =
+    user?.role === "admin"
+      ? [{ href: "/admin", label: "Админ", icon: Crown }, ...utility]
+      : utility;
+  const all = [...primary, ...utilityForUser];
 
   const trialDaysLeft = user
     ? Math.max(
@@ -148,7 +154,7 @@ export default function Navigation() {
               </Link>
             </li>
           )}
-          {utility.map((it) => (
+          {utilityForUser.map((it) => (
             <li key={it.href}>
               <NavChip item={it} active={isActive(it.href, location)} iconOnly />
             </li>
