@@ -16,12 +16,14 @@ import {
   Brain,
   BarChart3,
   ArrowRight,
+  CalendarPlus,
 } from "lucide-react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
-import { localLibrary, type Mode } from "@/lib/syncStorage";
+import { localLibrary, localCalendar, type Mode } from "@/lib/syncStorage";
+import { toast } from "sonner";
 
 /* 8 тонов — синхронизировано с TONES в server/routers/content.ts */
 const TONE_OPTIONS = [
@@ -58,7 +60,8 @@ const MODES: { v: Mode; label: string; icon: React.ComponentType<{ className?: s
   { v: "reels", label: "Reels", icon: Sparkles, desc: "Сценарий для вертикального видео" },
   { v: "hooks", label: "Хуки", icon: Wand2, desc: "7 альтернативных первых фраз" },
   { v: "hashtags", label: "Хештеги", icon: Hash, desc: "15 релевантных тегов" },
-  { v: "carousel", label: "Карусель", icon: Layers, desc: "7 слайдов для Instagram" },
+  /* Карусель вынесена в отдельный раздел /carousel (визуальный
+     конструктор с экспортом в PNG). */
 ];
 
 const useTitleFromQuery = (set: (t: string) => void) => {
@@ -83,10 +86,18 @@ export default function ContentGenerator() {
   const [rubric, setRubric] = useState<Rubric>("general");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [voiceText, setVoiceText] = useState("");
+  /* «В план»: раскрывающийся date-picker. */
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planDate, setPlanDate] = useState<string>(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return t.toISOString().slice(0, 10);
+  });
 
   useTitleFromQuery(setTitle);
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const cloudSave = trpc.sync.library.save.useMutation();
+  const cloudSchedule = trpc.sync.scheduled.save.useMutation();
 
   const pack = trpc.content.generateFullPack.useMutation();
   const post = trpc.content.generatePost.useMutation();
@@ -215,6 +226,42 @@ export default function ContentGenerator() {
     }
     setCopiedId("saved");
     setTimeout(() => setCopiedId(null), 1800);
+  };
+
+  /* Кладёт текущую генерацию в Календарь (План). Формат подтягиваем из
+     режима. Дата — из inline date-picker (по умолчанию завтра). */
+  const handleSaveToPlan = (dateStr: string) => {
+    const hasData =
+      pack.data || post.data || reels.data || carousel.data || hooks.data;
+    if (!hasData) return;
+    const format =
+      mode === "reels"
+        ? "Reels"
+        : mode === "carousel"
+          ? "Карусель"
+          : mode === "hooks"
+            ? "Хуки"
+            : mode === "pack"
+              ? "Пакет"
+              : "Пост";
+    if (cloudEnabled && workspaceKey) {
+      cloudSchedule.mutate(
+        { workspaceKey, date: dateStr, title, format },
+        {
+          onSuccess: () => toast.success(`В плане на ${dateStr}`),
+          onError: (e) => toast.error(e.message),
+        },
+      );
+    } else {
+      localCalendar.add({
+        id: "gen-" + Date.now(),
+        date: dateStr,
+        title,
+        format,
+      });
+      toast.success(`В плане на ${dateStr}`);
+    }
+    setPlanOpen(false);
   };
 
   return (
@@ -430,6 +477,61 @@ export default function ContentGenerator() {
                     : "Сохранено"
                   : "В библиотеку"}
               </button>
+              {/* «В план» — доступно для контентных режимов (не хуки/хэштеги
+                  как самостоятельная единица плана). */}
+              {(pack.data || post.data || reels.data || carousel.data) &&
+                (planOpen ? (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      type="date"
+                      value={planDate}
+                      onChange={(e) => setPlanDate(e.target.value)}
+                      autoFocus
+                      style={{
+                        background: "var(--ink-3)",
+                        color: "#fff",
+                        border: "1px solid rgba(212,168,67,0.4)",
+                        borderRadius: 9999,
+                        padding: "10px 14px",
+                        fontSize: 13,
+                        fontFamily: "var(--font-body)",
+                        colorScheme: "dark",
+                      }}
+                    />
+                    <button
+                      onClick={() => handleSaveToPlan(planDate)}
+                      className="btn-gold"
+                      disabled={cloudSchedule.isPending}
+                      style={{ padding: "10px 14px" }}
+                      title="Подтвердить дату"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setPlanOpen(false)}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 9999,
+                        padding: "10px 14px",
+                        color: "var(--muted-foreground)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setPlanOpen(true)}
+                    className="btn-gold"
+                    style={{ background: "var(--ink-2)", color: "#fff" }}
+                    title="Поставить в контент-план"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    В план
+                  </button>
+                ))}
             </div>
 
             {(pack.error ||

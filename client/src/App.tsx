@@ -8,6 +8,7 @@ import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
 import ContentGenerator from "./pages/ContentGenerator";
+import Carousel from "./pages/Carousel";
 import Plan from "./pages/Plan";
 import Settings from "./pages/Settings";
 import Trends from "./pages/Trends";
@@ -20,6 +21,7 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Dashboard} />
       <Route path="/generator" component={ContentGenerator} />
+      <Route path="/carousel" component={Carousel} />
       <Route path="/trends" component={Trends} />
       <Route path="/media" component={Media} />
       {/* /plan — основной маршрут (табы Календарь / Архив).

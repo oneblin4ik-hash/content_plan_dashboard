@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
-  TrendingUp, Image as ImageIcon, Link2,
+  TrendingUp, Image as ImageIcon, Link2, Layers,
 } from "lucide-react";
 
 /* Главная нав-полоса.
@@ -16,6 +16,7 @@ import {
 const primary = [
   { href: "/", label: "Идеи", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
+  { href: "/carousel", label: "Карусели", icon: Layers },
   { href: "/plan", label: "План", icon: Calendar },
   { href: "/analytics", label: "Аналитика", icon: BarChart3 },
 ];

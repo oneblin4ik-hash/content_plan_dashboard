@@ -378,6 +378,93 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
       return { carousel, slides: input.slides, title: input.title, model };
     }),
 
+  /* ---------- CAROUSEL STUDIO — структурированные слайды ----------
+     Для визуального конструктора (/carousel) нужен не текстовый блок,
+     а массив слайдов с ролями (cover/content/cta), заголовком и телом.
+     Возвращаем строгий JSON, парсим и чистим. */
+  generateCarouselSlides: publicProcedure
+    .input(
+      z.object({
+        title: z.string().min(5),
+        slides: z.number().int().min(3).max(12).default(7),
+        segment: z
+          .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
+          .default("mixed"),
+        workspaceKey: wsKeyOptional,
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const segmentHint =
+        input.segment === "women_25_45"
+          ? "Женщины 25-45: похудение, отёки, нет времени, психология срывов."
+          : input.segment === "men_30_45"
+            ? "Мужчины 30-45: офис, лишний вес, грудь/руки, практичное питание."
+            : input.segment === "ambitious_pro"
+              ? "Амбициозные профи 30-45: статус, биохакинг, плато, стресс."
+              : "Смешанная ЦА.";
+
+      const system = `${SERBOLIN_SYSTEM}
+
+Текущая задача: контент-карусель для Instagram на ${input.slides} слайдов.
+ЦА: ${segmentHint}
+Правила слайдов:
+- Слайд 1 — ОБЛОЖКА: мощный кликбейт-хук (≤ 8 слов в headline) + подзаголовок-крючок (≤ 12 слов).
+- Средние слайды — КОНТЕНТ: одна мысль на слайд. headline ≤ 6 слов, body 1-2 коротких фразы (≤ 22 слова).
+- Последний слайд — CTA: призыв (написать Эдуарду / забрать план / подписаться).
+Голос Эдуарда: «ты», без канцелярита, можно эмодзи в меру.`;
+
+      const user = `Тема карусели: «${input.title}».
+Сделай ровно ${input.slides} слайдов. Верни строго JSON без markdown:
+{
+  "slides": [
+    { "kind": "cover", "headline": "...", "body": "..." },
+    { "kind": "content", "headline": "...", "body": "..." },
+    { "kind": "cta", "headline": "...", "body": "..." }
+  ]
+}
+Первый слайд kind=cover, последний kind=cta, остальные kind=content.`;
+
+      const { text: raw, model } = await callLLM(
+        system,
+        user,
+        input.workspaceKey,
+      );
+      const cleaned = raw
+        .replace(/^```(json)?/i, "")
+        .replace(/```$/i, "")
+        .trim();
+      type Slide = { kind: string; headline: string; body: string };
+      let slides: Slide[] = [];
+      try {
+        const parsed = JSON.parse(cleaned) as { slides: Slide[] };
+        slides = (parsed.slides ?? [])
+          .filter(
+            (s) =>
+              typeof s.headline === "string" && s.headline.trim().length > 0,
+          )
+          .map((s, i, arr) => ({
+            kind:
+              i === 0
+                ? "cover"
+                : i === arr.length - 1
+                  ? "cta"
+                  : s.kind === "cover" || s.kind === "cta"
+                    ? "content"
+                    : s.kind || "content",
+            headline: s.headline.trim().slice(0, 120),
+            body: (s.body ?? "").trim().slice(0, 280),
+          }));
+      } catch {
+        throw new Error(
+          `LLM не вернул валидный JSON слайдов: ${cleaned.slice(0, 200)}`,
+        );
+      }
+      if (slides.length === 0) {
+        throw new Error("Не удалось сгенерировать слайды, попробуй ещё раз.");
+      }
+      return { slides, title: input.title, model };
+    }),
+
   /* ---------- BRAND-VOICE VALIDATOR — новая фича ---------- */
   validateVoice: publicProcedure
     .input(z.object({ text: z.string().min(20) }))
