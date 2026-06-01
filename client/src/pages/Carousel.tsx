@@ -18,6 +18,9 @@ import {
   Palette,
   Type as TypeIcon,
   Image as ImageIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -61,6 +64,72 @@ type Theme = {
 const FONT_DISPLAY =
   '"Space Grotesk", "Inter", -apple-system, sans-serif';
 const FONT_BODY = '"Inter", -apple-system, sans-serif';
+
+/* Наборы шрифтов для слайдов (head — заголовки, body — текст).
+   Подобраны под формат IG-каруселей: жирные геометрические и
+   конденсированные начертания, которые хорошо читаются на телефоне.
+   Все подгружены через @import в index.css. */
+type FontPreset = {
+  id: string;
+  name: string;
+  head: string;
+  body: string;
+  /* Жирность заголовка — у разных шрифтов «тяжёлый» вес отличается. */
+  headWeight: number;
+};
+const FONTS: FontPreset[] = [
+  {
+    id: "grotesk",
+    name: "Space Grotesk",
+    head: FONT_DISPLAY,
+    body: FONT_BODY,
+    headWeight: 700,
+  },
+  {
+    id: "montserrat",
+    name: "Montserrat",
+    head: '"Montserrat", sans-serif',
+    body: '"Montserrat", sans-serif',
+    headWeight: 800,
+  },
+  {
+    id: "poppins",
+    name: "Poppins",
+    head: '"Poppins", sans-serif',
+    body: '"Poppins", sans-serif',
+    headWeight: 700,
+  },
+  {
+    id: "oswald",
+    name: "Oswald",
+    head: '"Oswald", sans-serif',
+    body: '"Inter", sans-serif',
+    headWeight: 700,
+  },
+  {
+    id: "bebas",
+    name: "Bebas Neue",
+    head: '"Bebas Neue", sans-serif',
+    body: '"Inter", sans-serif',
+    headWeight: 400,
+  },
+  {
+    id: "unbounded",
+    name: "Unbounded",
+    head: '"Unbounded", sans-serif',
+    body: '"Inter", sans-serif',
+    headWeight: 700,
+  },
+  {
+    id: "manrope",
+    name: "Manrope",
+    head: '"Manrope", sans-serif',
+    body: '"Manrope", sans-serif',
+    headWeight: 800,
+  },
+];
+
+type Align = "left" | "center" | "right";
 
 const THEMES: Theme[] = [
   {
@@ -210,6 +279,8 @@ export default function Carousel() {
   const [showPages, setShowPages] = useState(true);
   const [showHandle, setShowHandle] = useState(true);
   const [ratio, setRatio] = useState<Ratio>("4:5");
+  const [fontId, setFontId] = useState("grotesk");
+  const [align, setAlign] = useState<Align>("left");
   const [panel, setPanel] = useState<"slide" | "design">("slide");
   const [exporting, setExporting] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
@@ -219,10 +290,17 @@ export default function Carousel() {
     return t.toISOString().slice(0, 10);
   });
 
+  const fontPreset = FONTS.find((f) => f.id === fontId) ?? FONTS[0];
   const baseTheme = THEMES.find((t) => t.id === themeId) ?? THEMES[0];
+  /* Шрифт переопределяет fontHead/fontBody темы; accent — accent. */
   const theme: Theme = useMemo(
-    () => (accent ? { ...baseTheme, accent } : baseTheme),
-    [baseTheme, accent],
+    () => ({
+      ...baseTheme,
+      ...(accent ? { accent } : {}),
+      fontHead: fontPreset.head,
+      fontBody: fontPreset.body,
+    }),
+    [baseTheme, accent, fontPreset.head, fontPreset.body],
   );
   const dims = RATIO_DIMS[ratio];
 
@@ -323,6 +401,9 @@ export default function Carousel() {
     if (!node) return;
     setExporting(true);
     try {
+      /* Ждём, пока выбранный шрифт реально загрузится, иначе PNG
+         отрендерится с системным fallback. */
+      await document.fonts.ready;
       const dataUrl = await toPng(node, { pixelRatio: 1, cacheBust: true });
       downloadDataUrl(dataUrl, `${slugTitle}-${idx + 1}.png`);
     } catch {
@@ -336,6 +417,7 @@ export default function Carousel() {
     if (slides.length === 0) return;
     setExporting(true);
     try {
+      await document.fonts.ready;
       const zip = new JSZip();
       for (let i = 0; i < slides.length; i++) {
         const node = exportRefs.current[i];
@@ -363,7 +445,16 @@ export default function Carousel() {
     const payload = {
       title,
       slides,
-      design: { themeId, accent, handle, showPages, showHandle, ratio },
+      design: {
+        themeId,
+        accent,
+        handle,
+        showPages,
+        showHandle,
+        ratio,
+        fontId,
+        align,
+      },
     };
     if (cloudEnabled && workspaceKey) {
       try {
@@ -661,6 +752,8 @@ export default function Carousel() {
                       showHandle={showHandle}
                       width={ratio === "9:16" ? 320 : 420}
                       ratio={ratio}
+                      align={align}
+                      headWeight={fontPreset.headWeight}
                     />
                   </div>
                 )}
@@ -706,6 +799,8 @@ export default function Carousel() {
                       showHandle={showHandle}
                       width={88}
                       ratio={ratio}
+                      align={align}
+                      headWeight={fontPreset.headWeight}
                     />
                     <span
                       style={{
@@ -944,6 +1039,77 @@ export default function Carousel() {
                       </div>
                     </Field>
 
+                    <Field label="Шрифт">
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 6,
+                        }}
+                      >
+                        {FONTS.map((f) => (
+                          <button
+                            key={f.id}
+                            onClick={() => setFontId(f.id)}
+                            style={{
+                              padding: "10px 12px",
+                              borderRadius: 10,
+                              border:
+                                fontId === f.id
+                                  ? "2px solid var(--brand-gold)"
+                                  : "1px solid rgba(255,255,255,0.08)",
+                              background: "var(--ink-2)",
+                              color: "#fff",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontFamily: f.head,
+                              fontWeight: f.headWeight,
+                              fontSize: 16,
+                              lineHeight: 1.1,
+                            }}
+                            title={f.name}
+                          >
+                            {f.name}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+
+                    <Field label="Выравнивание текста">
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {(
+                          [
+                            { v: "left", icon: <AlignLeft className="w-4 h-4" />, label: "Слева" },
+                            { v: "center", icon: <AlignCenter className="w-4 h-4" />, label: "По центру" },
+                            { v: "right", icon: <AlignRight className="w-4 h-4" />, label: "Справа" },
+                          ] as { v: Align; icon: React.ReactNode; label: string }[]
+                        ).map((a) => (
+                          <button
+                            key={a.v}
+                            onClick={() => setAlign(a.v)}
+                            title={a.label}
+                            style={{
+                              flex: 1,
+                              padding: "10px 0",
+                              borderRadius: 10,
+                              border: 0,
+                              background:
+                                align === a.v
+                                  ? "var(--brand-gold)"
+                                  : "var(--ink-2)",
+                              color: align === a.v ? "var(--ink)" : "#fff",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {a.icon}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+
                     <Field label="Подпись автора">
                       <input
                         value={handle}
@@ -1002,6 +1168,8 @@ export default function Carousel() {
               showHandle={showHandle}
               width={dims.w}
               ratio={ratio}
+              align={align}
+              headWeight={fontPreset.headWeight}
             />
           </div>
         ))}
@@ -1025,6 +1193,8 @@ function SlideCanvas({
   showHandle,
   width,
   ratio,
+  align = "left",
+  headWeight = 700,
 }: {
   slide: Slide;
   index: number;
@@ -1035,6 +1205,8 @@ function SlideCanvas({
   showHandle: boolean;
   width: number;
   ratio: Ratio;
+  align?: Align;
+  headWeight?: number;
 }) {
   const dims = RATIO_DIMS[ratio];
   const height = (width * dims.h) / dims.w;
@@ -1048,6 +1220,21 @@ function SlideCanvas({
   const kickerSize = 22 * u;
 
   const overlayAlpha = slide.imageUrl ? (slide.overlay ?? 0.4) : 0;
+
+  /* Выравнивание текста: влияет на textAlign контента и на сторону,
+     к которой прижаты блоки (полоса обложки, CTA-кнопка, футер). */
+  const alignItems =
+    align === "center"
+      ? "center"
+      : align === "right"
+        ? "flex-end"
+        : "flex-start";
+  const footerSide =
+    align === "center"
+      ? { left: 0, right: 0, textAlign: "center" as const }
+      : align === "right"
+        ? { right: pad, textAlign: "right" as const }
+        : { left: pad, textAlign: "left" as const };
 
   return (
     <div
@@ -1147,6 +1334,8 @@ function SlideCanvas({
           display: "flex",
           flexDirection: "column",
           justifyContent: isCover ? "center" : "flex-start",
+          alignItems,
+          textAlign: align,
           position: "relative",
           zIndex: 2,
         }}
@@ -1167,7 +1356,7 @@ function SlideCanvas({
           style={{
             fontFamily: theme.fontHead,
             fontSize: headSize,
-            fontWeight: 700,
+            fontWeight: headWeight,
             lineHeight: 1.05,
             letterSpacing: -0.5 * u,
             whiteSpace: "pre-wrap",
@@ -1194,7 +1383,7 @@ function SlideCanvas({
           <div
             style={{
               marginTop: 44 * u,
-              alignSelf: "flex-start",
+              alignSelf: alignItems,
               background: theme.accent,
               color: theme.accentText,
               fontFamily: theme.fontHead,
@@ -1215,12 +1404,12 @@ function SlideCanvas({
           style={{
             position: "absolute",
             bottom: pad,
-            left: pad,
             fontFamily: theme.fontHead,
             fontSize: kickerSize,
             fontWeight: 600,
             color: theme.body,
             zIndex: 2,
+            ...footerSide,
           }}
         >
           {handle}
