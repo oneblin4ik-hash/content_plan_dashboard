@@ -112,8 +112,9 @@ async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
       plan: string;
       trial_ends_at: number;
       tokens_remaining: number;
+      email_verified_at: number | null;
     }>(
-      "SELECT id, email, name, plan, trial_ends_at, tokens_remaining FROM users WHERE id = ? LIMIT 1",
+      "SELECT id, email, name, plan, trial_ends_at, tokens_remaining, email_verified_at FROM users WHERE id = ? LIMIT 1",
       [payload.sub],
     );
     const u = rows[0];
@@ -125,9 +126,8 @@ async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const role: "user" | "admin" = adminList.includes(u.email.toLowerCase())
-      ? "admin"
-      : "user";
+    const isAdmin = adminList.includes(u.email.toLowerCase());
+    const role: "user" | "admin" = isAdmin ? "admin" : "user";
     return {
       id: u.id,
       email: u.email,
@@ -136,6 +136,10 @@ async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
       trialEndsAt: u.trial_ends_at,
       tokensRemaining: u.tokens_remaining,
       role,
+      /* Админ всегда считается «подтверждённым», чтобы не получать
+         баннер «подтверди email» в админ-аккаунте, у которого
+         фактически верификация может ещё не пройти. */
+      emailVerified: isAdmin || u.email_verified_at != null,
     };
   } catch {
     return null;

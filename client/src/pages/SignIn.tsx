@@ -76,20 +76,39 @@ export default function SignIn() {
             fontSize: 13,
             color: "var(--muted-foreground)",
             marginTop: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
           }}
         >
-          Ещё нет аккаунта?{" "}
-          <Link href="/signup">
-            <span
-              style={{
-                color: "var(--brand-gold)",
-                textDecoration: "underline",
-                cursor: "pointer",
-              }}
-            >
-              Зарегистрироваться
-            </span>
-          </Link>
+          <div>
+            Ещё нет аккаунта?{" "}
+            <Link href="/signup">
+              <span
+                style={{
+                  color: "var(--brand-gold)",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                Зарегистрироваться
+              </span>
+            </Link>
+          </div>
+          <div>
+            <Link href="/forgot-password">
+              <span
+                style={{
+                  color: "var(--muted-foreground)",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                Забыл пароль?
+              </span>
+            </Link>
+          </div>
         </div>
       </form>
     </AuthLayout>

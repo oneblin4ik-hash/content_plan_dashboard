@@ -9,6 +9,12 @@ import {
   buildSessionCookie,
   buildClearCookie,
 } from "../_core/auth";
+import {
+  sendEmail,
+  buildVerificationEmail,
+  buildPasswordResetEmail,
+  getAppUrl,
+} from "../_core/email";
 
 /* ============================================================
    Auth router: регистрация / логин / выход / профиль.
@@ -56,6 +62,52 @@ function isSecure(): boolean {
   /* Cookie Secure флаг на проде включён; в dev (NODE_ENV=development) —
      выключен, чтобы работало локально без HTTPS. */
   return process.env.NODE_ENV !== "development";
+}
+
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+const RESET_TTL_MS = 60 * 60 * 1000;
+
+/* Генерация одноразового токена. crypto.randomUUID даёт 128 бит
+   энтропии — достаточно для одноразовых URL-токенов. Никаких
+   sequential id, чтобы нельзя было перебором подобрать чужой
+   токен. */
+function makeToken(): string {
+  return (
+    crypto.randomUUID().replace(/-/g, "") +
+    crypto.randomUUID().replace(/-/g, "")
+  );
+}
+
+/* Запускает отправку verification-письма. Не throw'ит при ошибке
+   email-провайдера — наружу возвращаем "успех", но логируем. Это
+   осознанно: если письмо не доставилось, юзер всегда может нажать
+   «отправить повторно». UX важнее немедленной диагностики. */
+async function dispatchVerification(userId: string, email: string) {
+  const token = makeToken();
+  const expiresAt = Date.now() + VERIFY_TTL_MS;
+  await d1Execute(
+    "UPDATE users SET email_verification_token = ?, email_verification_expires_at = ? WHERE id = ?",
+    [token, expiresAt, userId],
+  );
+  const url = `${getAppUrl()}/verify-email?token=${token}`;
+  const r = await sendEmail(buildVerificationEmail({ email, url }));
+  if (!r.ok) {
+    console.error(`[auth] не удалось отправить verification на ${email}:`, r.error);
+  }
+}
+
+async function dispatchPasswordReset(userId: string, email: string) {
+  const token = makeToken();
+  const expiresAt = Date.now() + RESET_TTL_MS;
+  await d1Execute(
+    "UPDATE users SET password_reset_token = ?, password_reset_expires_at = ? WHERE id = ?",
+    [token, expiresAt, userId],
+  );
+  const url = `${getAppUrl()}/reset-password?token=${token}`;
+  const r = await sendEmail(buildPasswordResetEmail({ email, url }));
+  if (!r.ok) {
+    console.error(`[auth] не удалось отправить reset на ${email}:`, r.error);
+  }
 }
 
 export const authRouter = router({
@@ -120,6 +172,11 @@ export const authRouter = router({
       const token = await signJWT(id, getJwtSecret());
       ctx.setCookies.push(buildSessionCookie(token, { secure: isSecure() }));
 
+      /* Шлём verification-письмо асинхронно — но await'им, иначе
+         Worker может прервать isolate до завершения fetch к Resend.
+         Время отправки ~200 ms, не критично для UX регистрации. */
+      await dispatchVerification(id, email);
+
       return { ok: true, userId: id };
     }),
 
@@ -168,8 +225,128 @@ export const authRouter = router({
       trialEndsAt: ctx.user.trialEndsAt,
       tokensRemaining: ctx.user.tokensRemaining,
       role: ctx.user.role,
+      emailVerified: ctx.user.emailVerified,
     };
   }),
+
+  /* Подтверждение email по токену из ссылки в письме. Принимает
+     только токен — авторизация не требуется (юзер мог не быть
+     залогинен в браузере, где открыл письмо). После успеха
+     одноразовый токен инвалидируется. */
+  verifyEmail: publicProcedure
+    .input(z.object({ token: z.string().min(20).max(200) }))
+    .mutation(async ({ input }) => {
+      const rows = await d1Query<{
+        id: string;
+        email_verified_at: number | null;
+        email_verification_expires_at: number | null;
+      }>(
+        "SELECT id, email_verified_at, email_verification_expires_at FROM users WHERE email_verification_token = ? LIMIT 1",
+        [input.token],
+      );
+      const u = rows[0];
+      if (!u) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Ссылка недействительна или уже использована",
+        });
+      }
+      if (u.email_verified_at) {
+        /* Уже подтверждён ранее — идемпотентно возвращаем ok,
+           одновременно чистим токен. */
+        await d1Execute(
+          "UPDATE users SET email_verification_token = NULL, email_verification_expires_at = NULL WHERE id = ?",
+          [u.id],
+        );
+        return { ok: true, alreadyVerified: true };
+      }
+      if (
+        !u.email_verification_expires_at ||
+        u.email_verification_expires_at < Date.now()
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Срок действия ссылки истёк, запроси новое письмо",
+        });
+      }
+      await d1Execute(
+        "UPDATE users SET email_verified_at = ?, email_verification_token = NULL, email_verification_expires_at = NULL WHERE id = ?",
+        [Date.now(), u.id],
+      );
+      return { ok: true, alreadyVerified: false };
+    }),
+
+  /* Повторная отправка письма верификации залогиненному юзеру. */
+  resendVerification: protectedProcedure.mutation(async ({ ctx }) => {
+    if (ctx.user.emailVerified) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Email уже подтверждён",
+      });
+    }
+    await dispatchVerification(ctx.user.id, ctx.user.email);
+    return { ok: true };
+  }),
+
+  /* Запрос на сброс пароля. Намеренно возвращаем ok даже если юзера
+     с таким email нет — иначе endpoint становится оракулом для
+     перебора зарегистрированных email'ов. Письмо уходит только тем,
+     кто реально существует. */
+  forgotPassword: publicProcedure
+    .input(z.object({ email: emailSchema }))
+    .mutation(async ({ input }) => {
+      const email = input.email.toLowerCase();
+      const rows = await d1Query<{ id: string }>(
+        "SELECT id FROM users WHERE email = ? LIMIT 1",
+        [email],
+      );
+      if (rows[0]) {
+        await dispatchPasswordReset(rows[0].id, email);
+      }
+      return { ok: true };
+    }),
+
+  /* Установка нового пароля по reset-токену. Одноразовый: после
+     успеха токен очищается. */
+  resetPassword: publicProcedure
+    .input(
+      z.object({
+        token: z.string().min(20).max(200),
+        password: passwordSchema,
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const rows = await d1Query<{
+        id: string;
+        email: string;
+        password_reset_expires_at: number | null;
+      }>(
+        "SELECT id, email, password_reset_expires_at FROM users WHERE password_reset_token = ? LIMIT 1",
+        [input.token],
+      );
+      const u = rows[0];
+      if (
+        !u ||
+        !u.password_reset_expires_at ||
+        u.password_reset_expires_at < Date.now()
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Ссылка недействительна или истекла",
+        });
+      }
+      const passwordHash = await hashPassword(input.password);
+      await d1Execute(
+        "UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires_at = NULL WHERE id = ?",
+        [passwordHash, u.id],
+      );
+      /* После сброса пароля сразу логиним — это обычное UX-ожидание,
+         не нужно после reset ещё и вводить новый пароль на форме
+         логина. */
+      const token = await signJWT(u.id, getJwtSecret());
+      ctx.setCookies.push(buildSessionCookie(token, { secure: isSecure() }));
+      return { ok: true };
+    }),
 
   /* Обновление имени (для профиля). Email пока не меняем — это
      отдельная операция с подтверждением через письмо. */

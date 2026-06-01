@@ -17,6 +17,7 @@ export type AuthUser = {
   trialEndsAt: number;
   tokensRemaining: number;
   role: "user" | "admin";
+  emailVerified: boolean;
 };
 
 export type TrpcContext = {

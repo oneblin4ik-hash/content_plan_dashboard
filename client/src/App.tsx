@@ -21,12 +21,19 @@ import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
+import VerifyEmail from "./pages/VerifyEmail";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import { PersonalDataConsent, Terms, Privacy } from "./pages/Legal";
 import Navigation from "./components/Navigation";
+import VerifyEmailBanner from "./components/VerifyEmailBanner";
 
 const PUBLIC_PATHS = [
   "/signin",
   "/signup",
+  "/verify-email",
+  "/forgot-password",
+  "/reset-password",
   "/legal/personal-data",
   "/legal/terms",
   "/legal/privacy",
@@ -76,6 +83,9 @@ function Router() {
     <Switch>
       <Route path="/signin" component={SignIn} />
       <Route path="/signup" component={SignUp} />
+      <Route path="/verify-email" component={VerifyEmail} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/legal/personal-data" component={PersonalDataConsent} />
       <Route path="/legal/terms" component={Terms} />
       <Route path="/legal/privacy" component={Privacy} />
@@ -101,10 +111,16 @@ function Router() {
 function Shell() {
   const [location] = useLocation();
   /* На auth-страницах своя простая разметка — без основной навигации. */
-  const hideNav = location === "/signin" || location === "/signup";
+  const hideNav =
+    location === "/signin" ||
+    location === "/signup" ||
+    location === "/verify-email" ||
+    location === "/forgot-password" ||
+    location === "/reset-password";
   return (
     <>
       {!hideNav && <Navigation />}
+      {!hideNav && <VerifyEmailBanner />}
       <Router />
     </>
   );

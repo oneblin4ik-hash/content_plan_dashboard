@@ -22,6 +22,7 @@ export type AuthUser = {
   trialEndsAt: number;
   tokensRemaining: number;
   role: "user" | "admin";
+  emailVerified: boolean;
 };
 
 type Ctx = {
