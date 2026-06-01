@@ -1,8 +1,9 @@
 import { Link, useLocation } from "wouter";
 import {
   BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
-  TrendingUp, Image as ImageIcon, Link2, Layers,
+  TrendingUp, Image as ImageIcon, Link2, Layers, LogOut, MessageCircle, CreditCard,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 /* Главная нав-полоса.
    Desktop: логотип слева, primary по центру (воронка создания контента),
@@ -25,6 +26,8 @@ const utility = [
   { href: "/trends", label: "Тренды", icon: TrendingUp },
   { href: "/media", label: "Медиа", icon: ImageIcon },
   { href: "/integrations", label: "Интеграции", icon: Link2 },
+  { href: "/voice", label: "Голос", icon: MessageCircle },
+  { href: "/pricing", label: "Тариф", icon: CreditCard },
   { href: "/settings", label: "Настройки", icon: KeyRound },
 ];
 
@@ -85,7 +88,16 @@ function NavChip({
 
 export default function Navigation() {
   const [location] = useLocation();
+  const { user, signOut } = useAuth();
   const all = [...primary, ...utility];
+
+  const trialDaysLeft = user
+    ? Math.max(
+        0,
+        Math.ceil((user.trialEndsAt - Date.now()) / (24 * 60 * 60 * 1000)),
+      )
+    : 0;
+  const trialActive = user?.plan === "trial" && trialDaysLeft > 0;
 
   return (
     <nav
@@ -110,10 +122,7 @@ export default function Navigation() {
               whiteSpace: "nowrap",
             }}
           >
-            Content Studio<span style={{ color: "var(--brand-gold)" }}>.</span>{" "}
-            <span style={{ color: "var(--brand-platinum)", fontWeight: 400 }}>
-              Mr. Serbolin
-            </span>
+            Content Studio<span style={{ color: "var(--brand-gold)" }}>.</span>
           </span>
         </Link>
         <ul
@@ -130,11 +139,31 @@ export default function Navigation() {
           className="flex items-center"
           style={{ listStyle: "none", gap: 2, margin: 0, padding: 0 }}
         >
+          {trialActive && (
+            <li>
+              <Link href="/pricing">
+                <span style={trialBadgeStyle} title="Триал-статус">
+                  Триал · {trialDaysLeft} {ruDays(trialDaysLeft)}
+                </span>
+              </Link>
+            </li>
+          )}
           {utility.map((it) => (
             <li key={it.href}>
               <NavChip item={it} active={isActive(it.href, location)} iconOnly />
             </li>
           ))}
+          {user && (
+            <li>
+              <button
+                onClick={signOut}
+                title={`Выйти (${user.email})`}
+                style={iconBtnStyle}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </li>
+          )}
         </ul>
       </div>
 
@@ -169,4 +198,42 @@ export default function Navigation() {
       </div>
     </nav>
   );
+}
+
+const trialBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "5px 12px",
+  borderRadius: 9999,
+  background: "rgba(212,168,67,0.14)",
+  color: "var(--brand-gold)",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.6,
+  textTransform: "uppercase",
+  cursor: "pointer",
+  marginRight: 6,
+  whiteSpace: "nowrap",
+};
+
+const iconBtnStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 36,
+  height: 36,
+  borderRadius: 9999,
+  background: "transparent",
+  border: 0,
+  color: "var(--brand-platinum)",
+  cursor: "pointer",
+  marginLeft: 4,
+};
+
+function ruDays(n: number): string {
+  const m = n % 10;
+  const m100 = n % 100;
+  if (m === 1 && m100 !== 11) return "день";
+  if ([2, 3, 4].includes(m) && ![12, 13, 14].includes(m100)) return "дня";
+  return "дней";
 }

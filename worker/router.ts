@@ -1,4 +1,4 @@
-import { publicProcedure, router } from "../server/_core/trpc";
+import { router } from "../server/_core/trpc";
 import { systemRouter } from "../server/_core/systemRouter";
 import { contentRouter } from "../server/routers/content";
 import { telegramRouter } from "../server/routers/telegram";
@@ -9,6 +9,8 @@ import { metricsRouter } from "../server/routers/metrics";
 import { integrationsRouter } from "../server/routers/integrations";
 import { topicsRouter } from "../server/routers/topics";
 import { competitorsRouter } from "../server/routers/competitors";
+import { authRouter } from "../server/routers/auth";
+import { voiceRouter } from "../server/routers/voice";
 
 export const appRouter = router({
   system: systemRouter,
@@ -21,10 +23,8 @@ export const appRouter = router({
   integrations: integrationsRouter,
   topics: topicsRouter,
   competitors: competitorsRouter,
-  auth: router({
-    me: publicProcedure.query(() => null),
-    logout: publicProcedure.mutation(() => ({ success: true } as const)),
-  }),
+  auth: authRouter,
+  voice: voiceRouter,
 });
 
 export type AppRouter = typeof appRouter;

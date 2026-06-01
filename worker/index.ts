@@ -5,13 +5,16 @@ import {
   handleTelegramWebhook,
   handleTelegramSetup,
 } from "./telegram-webhook";
-import { d1Execute, isD1Configured } from "../server/_core/d1";
+import { d1Execute, d1Query, isD1Configured } from "../server/_core/d1";
+import { parseSessionFromCookies, verifyJWT } from "../server/_core/auth";
+import type { AuthUser, TrpcContext } from "../server/_core/context";
 
 type Env = {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
   /* D1 binding из wrangler.toml — даёт прямой service binding к базе.
      Через него server/_core/d1.ts делает batch без HTTP-subrequests. */
   DB?: unknown;
+  JWT_SECRET?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_D1_DATABASE_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
@@ -88,6 +91,46 @@ async function handleAdminMigrate(req: Request): Promise<Response> {
   });
 }
 
+/* Достаёт юзера из cookie запроса: parse session JWT → SELECT users.
+   Любая ошибка/невалидный токен/невалидный юзер → null (становится
+   неавторизованным контекстом). Это OK — публичные процедуры всё
+   равно работают, protectedProcedure отвалится сам. */
+async function loadUserFromRequest(request: Request): Promise<AuthUser | null> {
+  if (!isD1Configured()) return null;
+  const token = parseSessionFromCookies(request.headers.get("cookie"));
+  if (!token) return null;
+  const secret = process.env.JWT_SECRET ?? "";
+  if (!secret) return null;
+  const payload = await verifyJWT(token, secret);
+  if (!payload) return null;
+  try {
+    const rows = await d1Query<{
+      id: string;
+      email: string;
+      name: string | null;
+      plan: string;
+      trial_ends_at: number;
+      tokens_remaining: number;
+    }>(
+      "SELECT id, email, name, plan, trial_ends_at, tokens_remaining FROM users WHERE id = ? LIMIT 1",
+      [payload.sub],
+    );
+    const u = rows[0];
+    if (!u) return null;
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      plan: u.plan,
+      trialEndsAt: u.trial_ends_at,
+      tokensRemaining: u.tokens_remaining,
+      role: "user",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function syncProcessEnv(env: Env) {
   // server/_core/env.ts reads process.env at import time, but ENV is `const`
   // pointing at the same getters. Re-assign each key so subsequent reads pick
@@ -110,11 +153,27 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/trpc")) {
+      /* Каждый запрос: читаем JWT из cookie, грузим юзера из D1,
+         кладём в ctx. setCookies — буфер для login/logout, который
+         потом склеиваем в Set-Cookie через responseMeta.headers. */
+      const ctxSetCookies: string[] = [];
+      const ctxUser = await loadUserFromRequest(request);
       return fetchRequestHandler({
         endpoint: "/api/trpc",
         req: request,
         router: appRouter,
-        createContext: () => ({ req: null as any, res: null as any, user: null }),
+        createContext: (): TrpcContext => ({
+          req: null,
+          res: null,
+          user: ctxUser,
+          setCookies: ctxSetCookies,
+        }),
+        responseMeta() {
+          if (ctxSetCookies.length === 0) return {};
+          const headers = new Headers();
+          for (const c of ctxSetCookies) headers.append("set-cookie", c);
+          return { headers };
+        },
         onError({ error, path }) {
           console.error(`[tRPC] ${path ?? "<root>"}:`, error);
         },

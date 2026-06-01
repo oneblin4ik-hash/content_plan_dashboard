@@ -1,46 +1,6 @@
-import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
-import { contentRouter } from "./routers/content";
-import { telegramRouter } from "./routers/telegram";
-import { syncRouter } from "./routers/sync";
-import { trendsRouter } from "./routers/trends";
-import { mediaRouter } from "./routers/media";
-import { metricsRouter } from "./routers/metrics";
-import { integrationsRouter } from "./routers/integrations";
-import { topicsRouter } from "./routers/topics";
-import { competitorsRouter } from "./routers/competitors";
-
-export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
-  system: systemRouter,
-  content: contentRouter,
-  telegram: telegramRouter,
-  sync: syncRouter,
-  trends: trendsRouter,
-  media: mediaRouter,
-  metrics: metricsRouter,
-  integrations: integrationsRouter,
-  topics: topicsRouter,
-  competitors: competitorsRouter,
-  auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
-    }),
-  }),
-
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
-});
-
-export type AppRouter = typeof appRouter;
+/**
+ * Legacy серверный appRouter — для manus dev-сервера (server/_core/index.ts).
+ * На Cloudflare Worker используется worker/router.ts. Содержание
+ * идентично, чтобы оба пути собирались.
+ */
+export { appRouter, type AppRouter } from "../worker/router";

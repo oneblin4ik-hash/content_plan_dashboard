@@ -1,10 +1,13 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Loader2 } from "lucide-react";
+import { Route, Switch, useLocation } from "wouter";
+import { useEffect } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
 import ContentGenerator from "./pages/ContentGenerator";
@@ -14,29 +17,96 @@ import Settings from "./pages/Settings";
 import Trends from "./pages/Trends";
 import Media from "./pages/Media";
 import Integrations from "./pages/Integrations";
+import Voice from "./pages/Voice";
+import Pricing from "./pages/Pricing";
+import SignIn from "./pages/SignIn";
+import SignUp from "./pages/SignUp";
+import { PersonalDataConsent, Terms, Privacy } from "./pages/Legal";
 import Navigation from "./components/Navigation";
+
+const PUBLIC_PATHS = [
+  "/signin",
+  "/signup",
+  "/legal/personal-data",
+  "/legal/terms",
+  "/legal/privacy",
+];
+
+function isPublic(path: string): boolean {
+  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));
+}
+
+/* Защита: пока ждём auth.me — спиннер; не залогинен на защищённом
+   маршруте → редирект на /signin; залогинен на /signin → редирект на /. */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, ready } = useAuth();
+  const [location, navigate] = useLocation();
+  const publicRoute = isPublic(location);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (!user && !publicRoute) {
+      navigate("/signin");
+    } else if (user && (location === "/signin" || location === "/signup")) {
+      navigate("/");
+    }
+  }, [ready, user, publicRoute, location, navigate]);
+
+  if (!ready) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--background)",
+          color: "var(--brand-platinum)",
+        }}
+      >
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function Router() {
   return (
     <Switch>
+      <Route path="/signin" component={SignIn} />
+      <Route path="/signup" component={SignUp} />
+      <Route path="/legal/personal-data" component={PersonalDataConsent} />
+      <Route path="/legal/terms" component={Terms} />
+      <Route path="/legal/privacy" component={Privacy} />
       <Route path={"/"} component={Dashboard} />
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/carousel" component={Carousel} />
+      <Route path="/voice" component={Voice} />
       <Route path="/trends" component={Trends} />
       <Route path="/media" component={Media} />
-      {/* /plan — основной маршрут (табы Календарь / Архив).
-          /calendar и /library оставлены для обратной совместимости со
-          старыми закладками — оба ведут в Plan, начальный таб
-          определяется внутри по pathname. */}
       <Route path="/plan" component={Plan} />
       <Route path="/library" component={Plan} />
       <Route path="/calendar" component={Plan} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/integrations" component={Integrations} />
       <Route path="/settings" component={Settings} />
+      <Route path="/pricing" component={Pricing} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
+  );
+}
+
+function Shell() {
+  const [location] = useLocation();
+  /* На auth-страницах своя простая разметка — без основной навигации. */
+  const hideNav = location === "/signin" || location === "/signup";
+  return (
+    <>
+      {!hideNav && <Navigation />}
+      <Router />
+    </>
   );
 }
 
@@ -44,13 +114,16 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
-        <WorkspaceProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Navigation />
-            <Router />
-          </TooltipProvider>
-        </WorkspaceProvider>
+        <AuthProvider>
+          <WorkspaceProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AuthGate>
+                <Shell />
+              </AuthGate>
+            </TooltipProvider>
+          </WorkspaceProvider>
+        </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

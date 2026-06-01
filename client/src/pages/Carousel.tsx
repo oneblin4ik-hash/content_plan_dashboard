@@ -321,7 +321,6 @@ export default function Carousel() {
         title: title.trim(),
         slides: count,
         segment,
-        workspaceKey: workspaceKey || undefined,
       });
       setSlides(
         res.slides.map((s) => ({

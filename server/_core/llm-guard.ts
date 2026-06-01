@@ -1,0 +1,113 @@
+/**
+ * Guarded LLM-вызов с учётом триала и бюджета токенов.
+ *
+ * Логика:
+ *   1. Проверяем триал и баланс токенов юзера (throw если кончилось).
+ *   2. Грузим voice пользователя → собираем системный промпт из
+ *      FITNESS_BASE_SYSTEM + персональный блок + petля результата
+ *      (performance context).
+ *   3. Вызываем invokeLLM.
+ *   4. Списываем usage.total_tokens из users.tokens_remaining.
+ *
+ * Используется во всех процедурах content.ts. Остальные LLM-роутеры
+ * (topics, competitors, integrations.analyzeVoice, metrics.insights)
+ * пока вызывают invokeLLM напрямую без guard — будут переведены
+ * следующей итерацией; ничего не ломают, но и триал на них не
+ * распространяется.
+ */
+import { TRPCError } from "@trpc/server";
+import { invokeLLM } from "./llm";
+import { d1Execute, d1Query } from "./d1";
+import { buildSystemPrompt, type VoiceConfig } from "./voice-config";
+import { loadPerformanceContext } from "./performance";
+import type { AuthUser } from "./context";
+
+export type GuardedResult = { text: string; model: string };
+
+async function loadUserVoice(userId: string): Promise<VoiceConfig | null> {
+  try {
+    const rows = await d1Query<{ voice_json: string | null }>(
+      "SELECT voice_json FROM users WHERE id = ? LIMIT 1",
+      [userId],
+    );
+    const raw = rows[0]?.voice_json;
+    if (!raw) return null;
+    return JSON.parse(raw) as VoiceConfig;
+  } catch {
+    return null;
+  }
+}
+
+function assertCanGenerate(user: AuthUser) {
+  const now = Date.now();
+  if (user.plan === "trial" && user.trialEndsAt < now) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Пробный период закончился. Оформи подписку, чтобы продолжить генерацию.",
+    });
+  }
+  if (user.tokensRemaining <= 0) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Лимит токенов исчерпан. Оформи подписку, чтобы пополнить баланс.",
+    });
+  }
+}
+
+/**
+ * task — постановочная часть промпта (что нужно сгенерировать).
+ * Базовый системный блок (правила ремесла) и персональный голос
+ * добавляются автоматически.
+ */
+export async function invokeForUser(
+  user: AuthUser,
+  task: string,
+  userPrompt: string,
+): Promise<GuardedResult> {
+  assertCanGenerate(user);
+
+  const [voice, perfCtx] = await Promise.all([
+    loadUserVoice(user.id),
+    loadPerformanceContext(user.id),
+  ]);
+  const baseSystem = buildSystemPrompt(voice);
+  const fullSystem = `${baseSystem}${perfCtx}\n\n${task}`;
+
+  const r = await invokeLLM({
+    messages: [
+      { role: "system", content: fullSystem },
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+  const out = r.choices[0]?.message.content;
+  if (!out || typeof out !== "string") {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "LLM вернул пустой ответ",
+    });
+  }
+  const model = (r.model ?? "").replace(/^models\//, "");
+
+  /* Списание токенов. usage может быть undefined у некоторых
+     fallback-ответов — тогда списываем «по факту» приблизительно
+     (длина в word ≈ tokens / 1.3). Это конкретно для случая, когда
+     usage отсутствует — лучше слегка штрафовать, чем пускать
+     бесконечно. */
+  const used =
+    r.usage?.total_tokens ??
+    Math.max(200, Math.ceil(fullSystem.length / 3 + out.length / 3));
+  try {
+    await d1Execute(
+      "UPDATE users SET tokens_remaining = MAX(0, tokens_remaining - ?), tokens_used_total = tokens_used_total + ? WHERE id = ?",
+      [used, used, user.id],
+    );
+  } catch {
+    /* Если списание не удалось — пускаем результат всё равно;
+       юзер не должен страдать от наших инфраструктурных проблем. */
+  }
+
+  return { text: out, model };
+}

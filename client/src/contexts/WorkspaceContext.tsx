@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/contexts/AuthContext";
 
 const STORAGE_KEY = "serbolin.studio.workspaceKey";
 
@@ -32,9 +33,20 @@ function makeKey(): string {
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [workspaceKey, setKeyState] = useState<string>("");
 
+  /* Multi-user: workspaceKey = user.id, когда юзер залогинен.
+     Это сохраняет совместимость с роутерами, которые ещё принимают
+     workspaceKey input (sync/scheduled/library/metrics/integrations/
+     topics/telegram). Если юзер не залогинен — используем legacy
+     localStorage-ключ (для обратной совместимости с pre-auth данными;
+     UI всё равно не покажет protected-страниц без сессии). */
   useEffect(() => {
+    if (user?.id) {
+      setKeyState(user.id);
+      return;
+    }
     const existing = localStorage.getItem(STORAGE_KEY);
     if (existing) {
       setKeyState(existing);
@@ -43,7 +55,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(STORAGE_KEY, k);
       setKeyState(k);
     }
-  }, []);
+  }, [user?.id]);
 
   const status = trpc.sync.status.useQuery(undefined, {
     staleTime: 60_000,

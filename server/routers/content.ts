@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
-import { SERBOLIN_SYSTEM_PROMPT as SERBOLIN_SYSTEM } from "../_core/brand-knowledge";
-import { loadVoiceCtx } from "../_core/voice";
-import { loadPerformanceContext, getPerformanceContextStats } from "../_core/performance";
+import { protectedProcedure, router } from "../_core/trpc";
+import { invokeForUser } from "../_core/llm-guard";
+import { getPerformanceContextStats } from "../_core/performance";
 
 /* ============================================================
    Content Studio — Mr. Serbolin
@@ -101,54 +99,18 @@ const RUBRIC_BLUEPRINTS: Record<Rubric, string> = {
 const buildRubricBlock = (rubric: string) =>
   RUBRIC_BLUEPRINTS[rubric as Rubric] ?? "";
 
-/* callLLM возвращает не только текст, но и имя модели, которая реально
-   ответила. У Gemini в OpenAI-compat ответе это поле `model` (например
-   "models/gemini-2.5-flash"). UI Студии показывает badge — пользователь
-   видит, когда сработал fallback с 3.5 на 2.5 (при daily quota). */
-const callLLM = async (
-  system: string,
-  user: string,
-  workspaceKey?: string | null,
-): Promise<{ text: string; model: string }> => {
-  /* Петля результата: к голосовому профилю канала подмешиваем «что
-     зашло / не зашло у тебя» (из post_metrics) и приёмы конкурентов
-     (recommendations_for_serbolin из competitor_channels.analysis_json).
-     Оба запроса параллельные и read-only — если D1 чихнёт, генерация
-     всё равно идёт, просто без подмешивания. */
-  const [voiceCtx, perfCtx] = await Promise.all([
-    loadVoiceCtx(workspaceKey),
-    loadPerformanceContext(workspaceKey),
-  ]);
-  const fullSystem = `${system}${voiceCtx}${perfCtx}`;
-  const r = await invokeLLM({
-    messages: [
-      { role: "system", content: fullSystem },
-      { role: "user", content: user },
-    ],
-  });
-  const out = r.choices[0]?.message.content;
-  if (!out || typeof out !== "string")
-    throw new Error("LLM вернул пустой ответ");
-  // Gemini префиксует имя моделей как "models/gemini-…" — срезаем для UI.
-  const model = (r.model ?? "").replace(/^models\//, "");
-  return { text: out, model };
-};
-
-const wsKeyOptional = z.string().min(8).max(64).optional();
-
 /* Лёгкий endpoint для UI Студии — показывает badge «учитывает N
    твоих постов и K конкурентов». Помогает юзеру понять, что петля
-   работает (или что её нужно «заполнить» — внести метрики /
-   проанализировать конкурентов). */
-const contextStatsProcedure = publicProcedure
-  .input(z.object({ workspaceKey: wsKeyOptional }))
-  .query(({ input }) => getPerformanceContextStats(input.workspaceKey));
+   работает (или что её нужно «заполнить»). */
+const contextStatsProcedure = protectedProcedure.query(({ ctx }) =>
+  getPerformanceContextStats(ctx.user.id),
+);
 
 export const contentRouter = router({
   contextStats: contextStatsProcedure,
 
   /* ---------- POST ---------- */
-  generatePost: publicProcedure
+  generatePost: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5, "Заголовок минимум 5 символов"),
@@ -156,10 +118,9 @@ export const contentRouter = router({
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
         length: z.enum(["short", "medium", "long"]).default("medium"),
         rubric: z.enum(RUBRICS).default("general"),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
       const lengthWords =
         input.length === "short"
           ? "180–280 слов"
@@ -168,9 +129,7 @@ export const contentRouter = router({
             : "350–500 слов";
 
       const rubricBlock = buildRubricBlock(input.rubric);
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: ${formatBlock(input.tone)} пост для ${
+      const system = `Текущая задача: ${formatBlock(input.tone)} пост для ${
         input.platform === "telegram" ? "Telegram" : "Instagram"
       }.
 ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по умолчанию — женщины 25–45 (если в теме явно не указан
@@ -192,7 +151,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 Перед выдачей мысленно прогони текст через АНТИ-AI ЧЕК-ЛИСТ из системного
 промпта и убери все нарушения.`;
 
-      const { text: post, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: post, model } = await invokeForUser(ctx.user, system, user);
       return {
         post,
         title: input.title,
@@ -205,18 +164,15 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
     }),
 
   /* ---------- REELS SCRIPT ---------- */
-  generateReelsScript: publicProcedure
+  generateReelsScript: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
         duration: z.enum(["15-30s", "30-60s"]).default("15-30s"),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: вирусный сценарий Reels по формуле «БОЛЬ → РЕШЕНИЕ → CTA В БОТ»
+      .mutation(async ({ input, ctx }) => {
+      const system = `Текущая задача: вирусный сценарий Reels по формуле «БОЛЬ → РЕШЕНИЕ → CTA В БОТ»
 из блока «ФОРМУЛЫ КОНТЕНТА» системного промпта. Архетип — справедливый
 друг-эксперт. Тон умеренно жёсткий, контраст, парадокс. CTA — всегда в бот
 Эдуарда (ссылка в шапке/описании), потому что весь трафик идёт туда.`;
@@ -230,23 +186,20 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 **CTA (последние 2–3 с):** [конкретный призыв забрать гайд/разбор в боте]
 **КАДРЫ:** [3–4 буллета описаний планов в квадратных скобках]`;
 
-      const { text: script, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: script, model } = await invokeForUser(ctx.user, system, user);
       return { script, title: input.title, duration: input.duration, model };
     }),
 
   /* ---------- HOOK VARIATIONS — со scoring'ом (idea #6) ---------- */
-  generateHooks: publicProcedure
+  generateHooks: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
         count: z.number().int().min(3).max(10).default(7),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: сгенерировать N виральных хуков + оценить каждый по
+      .mutation(async ({ input, ctx }) => {
+      const system = `Текущая задача: сгенерировать N виральных хуков + оценить каждый по
 predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ ПАТТЕРНЫ
 ЗАГОЛОВКОВ» (паттерны A-H) из системного промпта — это выжимка из
 анализа 20 топовых фитнес-блогеров. Используй минимум 4 разных
@@ -278,7 +231,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
   ]
 }`;
 
-      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -322,24 +275,21 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
     }),
 
   /* ---------- HASHTAGS — новая фича ---------- */
-  generateHashtags: publicProcedure
+  generateHashtags: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
         platform: z.enum(["instagram", "telegram"]).default("instagram"),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: подбор хештегов. Без spam-тегов вида #fitness2024. Только релевантные.
+      .mutation(async ({ input, ctx }) => {
+      const system = `Текущая задача: подбор хештегов. Без spam-тегов вида #fitness2024. Только релевантные.
 Смешай категории: тема, аудитория, ниша, бренд.`;
 
       const user = `Подбери 15 хештегов для ${input.platform} к теме «${input.title}».
 Выдай одной строкой через пробел, начиная с #. Без объяснений.`;
 
-      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const tags = Array.from(
         new Set(
           raw
@@ -353,18 +303,15 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
     }),
 
   /* ---------- CAROUSEL — новая фича ---------- */
-  generateCarousel: publicProcedure
+  generateCarousel: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
         slides: z.number().int().min(5).max(10).default(7),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: контент-карусель для Instagram (${input.slides} слайдов).
+      .mutation(async ({ input, ctx }) => {
+      const system = `Текущая задача: контент-карусель для Instagram (${input.slides} слайдов).
 Один слайд — одна мысль. Короткие фразы. Sentence case.`;
 
       const user = `Карусель на ${input.slides} слайдов по теме «${input.title}».
@@ -374,7 +321,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
 
 Слайд 1 — обложка-хук. Последний слайд — CTA в духе «Напиши Эдуарду» или «Забери план».`;
 
-      const { text: carousel, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: carousel, model } = await invokeForUser(ctx.user, system, user);
       return { carousel, slides: input.slides, title: input.title, model };
     }),
 
@@ -382,7 +329,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
      Для визуального конструктора (/carousel) нужен не текстовый блок,
      а массив слайдов с ролями (cover/content/cta), заголовком и телом.
      Возвращаем строгий JSON, парсим и чистим. */
-  generateCarouselSlides: publicProcedure
+  generateCarouselSlides: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
@@ -390,10 +337,9 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
         segment: z
           .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
           .default("mixed"),
-        workspaceKey: wsKeyOptional,
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const segmentHint =
         input.segment === "women_25_45"
           ? "Женщины 25-45: похудение, отёки, нет времени, психология срывов."
@@ -403,9 +349,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
               ? "Амбициозные профи 30-45: статус, биохакинг, плато, стресс."
               : "Смешанная ЦА.";
 
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: контент-карусель для Instagram на ${input.slides} слайдов.
+      const system = `Текущая задача: контент-карусель для Instagram на ${input.slides} слайдов.
 ЦА: ${segmentHint}
 Правила слайдов:
 - Слайд 1 — ОБЛОЖКА: мощный кликбейт-хук (≤ 8 слов в headline) + подзаголовок-крючок (≤ 12 слов).
@@ -424,11 +368,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
 }
 Первый слайд kind=cover, последний kind=cta, остальные kind=content.`;
 
-      const { text: raw, model } = await callLLM(
-        system,
-        user,
-        input.workspaceKey,
-      );
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -466,9 +406,9 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
     }),
 
   /* ---------- BRAND-VOICE VALIDATOR — новая фича ---------- */
-  validateVoice: publicProcedure
+  validateVoice: protectedProcedure
     .input(z.object({ text: z.string().min(20) }))
-    .query(({ input }) => {
+    .query(({ input, ctx }) => {
       const text = input.text;
       const issues: { rule: string; example: string; severity: "warn" | "error" }[] =
         [];
@@ -518,7 +458,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
     }),
 
   /* ---------- REFINE — итеративная правка готового текста ---------- */
-  refine: publicProcedure
+  refine: protectedProcedure
     .input(
       z.object({
         original: z.string().min(20, "Слишком короткий исходный текст"),
@@ -526,10 +466,9 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
         kind: z
           .enum(["post", "reels", "carousel", "hook", "free"])
           .default("free"),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
       const kindHint =
         input.kind === "reels"
           ? "Это сценарий Reels — сохрани таймкоды и разделы (ХУК/ТЕЛО/ТРИГГЕР/CTA/КАДРЫ)."
@@ -541,9 +480,7 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
                 ? "Это пост — сохрани общую структуру и подачу, правь точечно."
                 : "";
 
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: точечная правка готового текста по инструкции пользователя.
+      const system = `Текущая задача: точечная правка готового текста по инструкции пользователя.
 ВАЖНО:
 - Меняй ТОЛЬКО то, что просит инструкция. Не переписывай заново.
 - Сохраняй бренд-голос Эдуарда даже если инструкция этого не требует.
@@ -560,26 +497,23 @@ ${input.instruction}
 
 Выдай только финальный отредактированный текст.`;
 
-      const { text: refined, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: refined, model } = await invokeForUser(ctx.user, system, user);
       return { refined, kind: input.kind, model };
     }),
 
   /* ---------- FULL PACK — пост + reels + хуки + хештеги одной кнопкой ---------- */
-  generateFullPack: publicProcedure
+  generateFullPack: protectedProcedure
     .input(
       z.object({
         title: z.string().min(5),
         platform: z.enum(["telegram", "instagram"]).default("instagram"),
         tone: z.enum(TONES).default("expert"),
         rubric: z.enum(RUBRICS).default("general"),
-      workspaceKey: wsKeyOptional,
       })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
       const rubricBlock = buildRubricBlock(input.rubric);
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: целый пакет контента вокруг одной темы.
+      const system = `Текущая задача: целый пакет контента вокруг одной темы.
 Тон поста: ${formatBlock(input.tone)}.
 ${rubricBlock ? rubricBlock + "\n" : ""}`;
 
@@ -595,7 +529,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
 }
 Без пояснений вне JSON.`;
 
-      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
@@ -619,7 +553,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
     }),
 
   /* ---------- MONTH PLAN — авто-план публикаций (idea #1) ---------- */
-  generateMonthPlan: publicProcedure
+  generateMonthPlan: protectedProcedure
     .input(
       z.object({
         startDate: z
@@ -631,10 +565,9 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
           .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
           .default("mixed"),
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
-        workspaceKey: wsKeyOptional,
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const total = input.weeksCount * input.postsPerWeek;
       const segmentHint =
         input.segment === "women_25_45"
@@ -645,9 +578,7 @@ ${rubricBlock ? rubricBlock + "\n" : ""}`;
               ? "Основная ЦА — амбициозные профи 30-45 с высоким чеком. Боли: плато, стресс, нужна логика и системность."
               : "Смешанная ЦА — чередуй посты под разные сегменты.";
 
-      const system = `${SERBOLIN_SYSTEM}
-
-Текущая задача: построить контент-план на ${input.weeksCount} недель
+      const system = `Текущая задача: построить контент-план на ${input.weeksCount} недель
 (${total} публикаций) для ${
         input.platform === "telegram" ? "Telegram" : "Instagram"
       }.
@@ -688,7 +619,7 @@ JSON без markdown-обёртки:
 В items должно быть РОВНО ${total} элементов. Даты — корректные ISO-даты
 ${input.weeksCount * 7} дней начиная с ${input.startDate}.`;
 
-      const { text: raw, model } = await callLLM(system, user, input.workspaceKey);
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")

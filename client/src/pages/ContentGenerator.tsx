@@ -121,7 +121,6 @@ export default function ContentGenerator() {
       original,
       instruction: refineInstruction.trim(),
       kind: key,
-      workspaceKey: workspaceKey || undefined,
     });
     setRefinedOverrides((s) => ({ ...s, [key]: r.refined }));
     setRefineHistory((s) => ({
@@ -139,10 +138,7 @@ export default function ContentGenerator() {
     setRefineHistory((s) => ({ ...s, [key]: stack.slice(0, -1) }));
   };
   /* Статистика «петли результата» — что подмешивается в промпт. */
-  const contextStats = trpc.content.contextStats.useQuery(
-    { workspaceKey },
-    { enabled: cloudEnabled, refetchOnWindowFocus: false },
-  );
+  const contextStats = trpc.content.contextStats.useQuery(undefined, { enabled: cloudEnabled, refetchOnWindowFocus: false });
   const validate = trpc.content.validateVoice.useQuery(
     { text: voiceText || "placeholder text for validation rule check" },
     { enabled: voiceText.length >= 20 }
@@ -163,19 +159,18 @@ export default function ContentGenerator() {
      ничего вшивать в title */
   const handleGenerate = async () => {
     if (!title.trim() || title.trim().length < 5) return;
-    const wk = workspaceKey || undefined;
     if (mode === "pack")
-      await pack.mutateAsync({ title, platform, tone, rubric, workspaceKey: wk });
+      await pack.mutateAsync({ title, platform, tone, rubric });
     else if (mode === "post")
-      await post.mutateAsync({ title, tone, platform, length, rubric, workspaceKey: wk });
+      await post.mutateAsync({ title, tone, platform, length, rubric });
     else if (mode === "reels")
-      await reels.mutateAsync({ title, duration, workspaceKey: wk });
+      await reels.mutateAsync({ title, duration });
     else if (mode === "hooks")
-      await hooks.mutateAsync({ title, count: hookCount, workspaceKey: wk });
+      await hooks.mutateAsync({ title, count: hookCount });
     else if (mode === "hashtags")
-      await hashtags.mutateAsync({ title, platform, workspaceKey: wk });
+      await hashtags.mutateAsync({ title, platform });
     else if (mode === "carousel")
-      await carousel.mutateAsync({ title, slides, workspaceKey: wk });
+      await carousel.mutateAsync({ title, slides });
   };
 
   const handleCopy = (text: string, id: string) => {
