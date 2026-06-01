@@ -205,8 +205,7 @@ export default function Settings() {
    «бот не админ канала» ловится сразу. */
 function TelegramChatsSection() {
   const { workspaceKey } = useWorkspace();
-  const list = trpc.telegram.chats.list.useQuery(
-    { workspaceKey },
+  const list = trpc.telegram.chats.list.useQuery(undefined,
     { enabled: !!workspaceKey },
   );
   const addChat = trpc.telegram.chats.add.useMutation({
@@ -233,7 +232,6 @@ function TelegramChatsSection() {
       .replace(/\/$/, "");
     if (!cleaned) return;
     addChat.mutate({
-      workspaceKey,
       chatId: cleaned,
       makeDefault: chats.length === 0,
     });
@@ -347,7 +345,7 @@ function TelegramChatsSection() {
                   <button
                     onClick={() =>
                       !c.isDefault &&
-                      setDefault.mutate({ workspaceKey, id: c.id })
+                      setDefault.mutate({ id: c.id })
                     }
                     title={
                       c.isDefault ? "Уже дефолтный" : "Сделать дефолтным"
@@ -400,7 +398,7 @@ function TelegramChatsSection() {
                           `Убрать «${c.title ?? c.chatId}» из списка? Сами сообщения в Telegram не удалятся.`,
                         )
                       ) {
-                        delChat.mutate({ workspaceKey, id: c.id });
+                        delChat.mutate({ id: c.id });
                       }
                     }}
                     title="Убрать"

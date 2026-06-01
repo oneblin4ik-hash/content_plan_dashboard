@@ -45,7 +45,7 @@ const RUBRICS = [
   { v: "lifehack", label: "Лайфхак" },
   { v: "overheard", label: "🎙 Подслушано у тренера" },
   { v: "case", label: "Кейс клиента" },
-  { v: "personal_story", label: "Личная история Эдуарда" },
+  { v: "personal_story", label: "Личная история" },
   { v: "myth_debunk", label: "Разбор мифа" },
   { v: "checklist", label: "Чек-лист" },
   { v: "before_after", label: "До / после" },
@@ -192,7 +192,6 @@ export default function ContentGenerator() {
     if (cloudEnabled && workspaceKey) {
       try {
         await cloudSave.mutateAsync({
-          workspaceKey,
           title,
           mode,
           platform:
@@ -241,7 +240,7 @@ export default function ContentGenerator() {
               : "Пост";
     if (cloudEnabled && workspaceKey) {
       cloudSchedule.mutate(
-        { workspaceKey, date: dateStr, title, format },
+        { date: dateStr, title, format },
         {
           onSuccess: () => toast.success(`В плане на ${dateStr}`),
           onError: (e) => toast.error(e.message),
@@ -275,7 +274,7 @@ export default function ContentGenerator() {
             style={{ maxWidth: 680, fontSize: 18, lineHeight: 1.5, marginTop: 18 }}
           >
             Введи тему — получи пост, сценарий Reels, альтернативные хуки,
-            релевантные хештеги и подпись. Голос настроен под Эдуарда: всегда «ты»,
+            релевантные хештеги и подпись. Голос настроен под автора.
             без канцеляризмов, без декоративных эмодзи.
           </p>
 
@@ -574,8 +573,7 @@ export default function ContentGenerator() {
                 sendPostTG.mutate({
                   title,
                   content: String((pack.data as Record<string, unknown>).post),
-                  workspaceKey,
-                })
+                  })
               }
             />
           )}
@@ -590,8 +588,7 @@ export default function ContentGenerator() {
                 sendPostTG.mutate({
                   title: post.data!.title,
                   content: refinedOverrides.post ?? post.data!.post,
-                  workspaceKey,
-                })
+                  })
               }
             />
           )}
@@ -606,8 +603,7 @@ export default function ContentGenerator() {
                 sendReelsTG.mutate({
                   title: reels.data!.title,
                   script: refinedOverrides.reels ?? reels.data!.script,
-                  workspaceKey,
-                })
+                  })
               }
             />
           )}
@@ -796,7 +792,7 @@ export default function ContentGenerator() {
                   className="text-platinum"
                   style={{ fontSize: 14, marginBottom: 14 }}
                 >
-                  Напиши, что поправить — Эдуард отредактирует точечно, не
+                  Напиши, что поправить — ИИ отредактирует точечно, не
                   переписывая всё заново. До 5 версий в истории.
                 </p>
                 <textarea
@@ -923,7 +919,7 @@ export default function ContentGenerator() {
           </div>
           <h2 style={{ marginBottom: 12, fontSize: 36 }}>
             Проверь свой текст.{" "}
-            <span style={{ color: "var(--brand-gold)" }}>Звучит как Эдуард?</span>
+            <span style={{ color: "var(--brand-gold)" }}>Звучит как ты?</span>
           </h2>
           <p
             className="text-platinum"
@@ -1004,7 +1000,7 @@ export default function ContentGenerator() {
                         fontSize: 13,
                       }}
                     >
-                      <ShieldCheck className="w-4 h-4" /> Голос Эдуарда — на месте
+                      <ShieldCheck className="w-4 h-4" /> Голос — на месте
                     </div>
                   ) : (
                     <div

@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
-  TrendingUp, Image as ImageIcon, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown,
+  TrendingUp, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
    Порядок primary = реальный путь пользователя:
    Идеи (витрина тем) → Студия (генерация) → План (расписание+архив,
    объединённый раздел с табами) → Аналитика (что сработало).
-   Реже используемое (тренды, медиа, интеграции, настройки) — в utility. */
+   Реже используемое (тренды, интеграции, голос, тариф, настройки) — в utility. */
 const primary = [
   { href: "/", label: "Идеи", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
@@ -24,7 +24,6 @@ const primary = [
 
 const utility = [
   { href: "/trends", label: "Тренды", icon: TrendingUp },
-  { href: "/media", label: "Медиа", icon: ImageIcon },
   { href: "/integrations", label: "Интеграции", icon: Link2 },
   { href: "/voice", label: "Голос", icon: MessageCircle },
   { href: "/pricing", label: "Тариф", icon: CreditCard },

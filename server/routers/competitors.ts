@@ -1,15 +1,16 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute, d1Batch, isD1Configured } from "../_core/d1";
-import { invokeLLM } from "../_core/llm";
-import { SERBOLIN_SYSTEM_PROMPT } from "../_core/brand-knowledge";
+import { invokeRawForUser } from "../_core/llm-guard";
+import { FITNESS_BASE_SYSTEM } from "../_core/voice-config";
+import type { AuthUser } from "../_core/context";
 
 /* ============================================================
    Competitor analysis — фитнес-вертикаль.
    Парсит публичные TG-каналы и YouTube-каналы конкурентов, кэширует
    набор последних постов/видео, для каждого канала просит Gemini
    выдать структурированный отчёт: что работает в нише, какие приёмы
-   использует автор, и как это применить для Эдуарда.
+   использует автор, и как это применить в своём контенте.
 
    Источники:
    - Telegram: HTML на t.me/s/<channel> (та же логика что в trends/
@@ -352,10 +353,15 @@ type AnalysisReport = {
   what_works: string[];
   content_formats: string[];
   hook_patterns: string[];
+  /* Поле всё ещё называется _for_serbolin для обратной совместимости с
+     уже сохранёнными в БД отчётами competitor_channels.analysis_json
+     (миграция переименования — отдельная задача). По смыслу теперь
+     это «рекомендации текущему юзеру». */
   recommendations_for_serbolin: string[];
 };
 
 async function analyzeChannel(
+  user: AuthUser,
   platform: "tg" | "yt",
   handle: string,
   title: string | undefined,
@@ -371,13 +377,13 @@ async function analyzeChannel(
     })
     .join("\n---\n");
 
-  const system = `${SERBOLIN_SYSTEM_PROMPT}
+  const system = `${FITNESS_BASE_SYSTEM}
 
 Текущая задача: проанализировать конкурента в фитнес-нише и выдать
-структурированный отчёт, который Эдуард сможет использовать в своей
+структурированный отчёт, который автор сможет использовать в своей
 контент-стратегии. Будь конкретным, без воды.`;
 
-  const user = `КОНКУРЕНТ: ${platform === "tg" ? "Telegram-канал" : "YouTube-канал"} @${handle}${
+  const userMsg = `КОНКУРЕНТ: ${platform === "tg" ? "Telegram-канал" : "YouTube-канал"} @${handle}${
     title ? ` ("${title}")` : ""
   }${subscribers ? `, ${subscribers.toLocaleString("ru-RU")} подписчиков` : ""}${
     avgViews
@@ -394,13 +400,13 @@ ${items}
   "what_works": ["3-5 пунктов: какой контент собирает больше всего вовлечения, почему"],
   "content_formats": ["2-4 формата которые автор активно использует (Reels/посты/лайвы/long-form)"],
   "hook_patterns": ["2-4 паттерна хуков которые автор использует (примеры из выборки)"],
-  "recommendations_for_serbolin": ["2-4 конкретных способа применить найденное для бренда Эдуарда — без копирования, через адаптацию под его голос"]
+  "recommendations_for_serbolin": ["2-4 конкретных способа применить найденное в собственном контенте — без копирования, через адаптацию под свой голос"]
 }`;
 
-  const r = await invokeLLM({
+  const r = await invokeRawForUser(user, {
     messages: [
       { role: "system", content: system },
-      { role: "user", content: user },
+      { role: "user", content: userMsg },
     ],
   });
   const raw = r.choices[0]?.message.content;
@@ -454,7 +460,7 @@ const handleSchema = z
   .regex(/^[A-Za-z0-9_.-]+$/, "Латиница/цифры/_/-/. без @");
 
 export const competitorsRouter = router({
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     if (!isD1Configured()) return [];
     await seedIfEmpty();
     const rows = await d1Query<CompetitorRow>(
@@ -482,14 +488,14 @@ export const competitorsRouter = router({
     }));
   }),
 
-  add: publicProcedure
+  add: protectedProcedure
     .input(
       z.object({
         platform: z.enum(["tg", "yt"]),
         handle: handleSchema,
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const cleaned = input.handle.replace(/^@/, "");
       const id = crypto.randomUUID();
       const now = Date.now();
@@ -517,16 +523,16 @@ export const competitorsRouter = router({
       return { ok: true, status: r.status, postCount: r.posts.length };
     }),
 
-  remove: publicProcedure
+  remove: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await d1Execute("DELETE FROM competitor_channels WHERE id = ?", [input.id]);
       return { ok: true };
     }),
 
   /* Парсит все каналы (по приоритету stale-first) — расход subrequests
      контролируем PARSE_LIMIT'ом, как в trends. */
-  refresh: publicProcedure
+  refresh: protectedProcedure
     .input(z.object({}).optional())
     .mutation(async () => {
       if (!isD1Configured()) throw new Error("D1 не настроен");
@@ -565,9 +571,9 @@ export const competitorsRouter = router({
       return { ok: true, total: rows.length, okCount };
     }),
 
-  analyze: publicProcedure
+  analyze: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const rows = await d1Query<CompetitorRow>(
         "SELECT id, platform, handle, title, subscribers, avg_views, bio, sample_posts_json, analysis_json, status, last_synced_at, last_analyzed_at, last_error FROM competitor_channels WHERE id = ? LIMIT 1",
         [input.id],
@@ -583,6 +589,7 @@ export const competitorsRouter = router({
         );
       }
       const report = await analyzeChannel(
+        ctx.user,
         row.platform as "tg" | "yt",
         row.handle,
         row.title ?? undefined,

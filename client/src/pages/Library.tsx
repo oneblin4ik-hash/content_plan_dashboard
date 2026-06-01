@@ -42,7 +42,7 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
   const [filter, setFilter] = useState<"all" | Mode>("all");
 
   const cloudList = trpc.sync.library.list.useQuery(
-    { workspaceKey, limit: 200 },
+    { limit: 200 },
     { enabled: cloudEnabled && workspaceKey.length > 0 }
   );
   const cloudDelete = trpc.sync.library.delete.useMutation({
@@ -74,7 +74,7 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
             : "Пост";
     if (cloudEnabled) {
       cloudSchedule.mutate(
-        { workspaceKey, date, title: item.title, format },
+        { date, title: item.title, format },
         {
           onSuccess: () => toast.success(`В план на ${date}`),
           onError: (e) => toast.error(e.message),
@@ -121,7 +121,7 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
   const filtered = filter === "all" ? items : items.filter((i) => i.mode === filter);
 
   const remove = (id: string) => {
-    if (cloudEnabled) cloudDelete.mutate({ workspaceKey, id });
+    if (cloudEnabled) cloudDelete.mutate({ id });
     else {
       localLibrary.remove(id);
       setLocalItems(localLibrary.load());
@@ -130,7 +130,7 @@ export default function Library({ embedded = false }: { embedded?: boolean }) {
 
   const clear = () => {
     if (!confirm("Очистить всю библиотеку?")) return;
-    if (cloudEnabled) cloudClear.mutate({ workspaceKey });
+    if (cloudEnabled) cloudClear.mutate();
     else {
       localLibrary.clear();
       setLocalItems([]);

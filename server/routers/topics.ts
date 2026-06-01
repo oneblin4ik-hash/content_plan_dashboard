@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Execute, d1Query, isD1Configured } from "../_core/d1";
-import { invokeLLM } from "../_core/llm";
-import { SERBOLIN_SYSTEM_PROMPT } from "../_core/brand-knowledge";
+import { invokeRawForUser } from "../_core/llm-guard";
+import { FITNESS_BASE_SYSTEM } from "../_core/voice-config";
 import { loadVoiceCtx } from "../_core/voice";
 
 /* ============================================================
@@ -34,9 +34,8 @@ type GeneratedTopic = {
 };
 
 export const topicsRouter = router({
-  list: publicProcedure
-    .input(z.object({ workspaceKey: wsKey }))
-    .query(async ({ input }) => {
+  list: protectedProcedure
+    .query(async ({ input, ctx }) => {
       if (!isD1Configured()) return [] as Array<GeneratedTopic & { id: string; createdAt: number }>;
       const rows = await d1Query<{
         id: string;
@@ -47,7 +46,7 @@ export const topicsRouter = router({
         created_at: number;
       }>(
         "SELECT id, title, reason, format, potential, created_at FROM user_topics WHERE workspace_key = ? ORDER BY created_at DESC LIMIT 200",
-        [input.workspaceKey],
+        [ctx.user.id],
       );
       return rows.map((r) => ({
         id: r.id,
@@ -59,10 +58,9 @@ export const topicsRouter = router({
       }));
     }),
 
-  generate: publicProcedure
+  generate: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey.optional(),
         count: z.number().int().min(3).max(15).default(6),
         segment: z
           .enum(["women_25_45", "men_30_45", "ambitious_pro", "mixed"])
@@ -72,7 +70,7 @@ export const topicsRouter = router({
         avoidTitles: z.array(z.string()).max(60).default([]),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const segmentHint =
         input.segment === "women_25_45"
           ? "Женщины 25-45, похудение/ягодицы/отёки, нет времени, психология срывов."
@@ -90,8 +88,8 @@ export const topicsRouter = router({
               .join("\n")}`
           : "";
 
-      const voiceCtx = await loadVoiceCtx(input.workspaceKey);
-      const system = `${SERBOLIN_SYSTEM_PROMPT}${voiceCtx}
+      const voiceCtx = await loadVoiceCtx(ctx.user.id);
+      const system = `${FITNESS_BASE_SYSTEM}${voiceCtx}
 
 Текущая задача: предложить ${input.count} новых тем для контент-плана.
 Опирайся на блок «ВИРАЛЬНЫЕ ПАТТЕРНЫ ЗАГОЛОВКОВ» из системного промпта.
@@ -116,7 +114,7 @@ export const topicsRouter = router({
 личная история, разбор мифа, чек-лист, до/после, вопрос-ответ).
 Минимум 1-2 темы с пометкой "Вирусный". Без эмодзи в title.${avoidBlock}`;
 
-      const r = await invokeLLM({
+      const r = await invokeRawForUser(ctx.user, {
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -165,24 +163,23 @@ export const topicsRouter = router({
       return { topics, model };
     }),
 
-  save: publicProcedure
+  save: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         title: z.string().min(3).max(220),
         reason: z.string().min(3).max(500),
         format: z.string().min(1).max(60),
         potential: z.string().min(1).max(30),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const id = crypto.randomUUID();
       const now = Date.now();
       await d1Execute(
         "INSERT INTO user_topics (id, workspace_key, title, reason, format, potential, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
           id,
-          input.workspaceKey,
+          ctx.user.id,
           input.title,
           input.reason,
           input.format,
@@ -193,10 +190,9 @@ export const topicsRouter = router({
       return { id, createdAt: now };
     }),
 
-  saveBatch: publicProcedure
+  saveBatch: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         topics: z
           .array(
             z.object({
@@ -210,7 +206,7 @@ export const topicsRouter = router({
           .max(20),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const now = Date.now();
       const ids: string[] = [];
       /* D1 REST не любит большие пачки, кладём по одной — десяток
@@ -220,18 +216,18 @@ export const topicsRouter = router({
         ids.push(id);
         await d1Execute(
           "INSERT INTO user_topics (id, workspace_key, title, reason, format, potential, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [id, input.workspaceKey, t.title, t.reason, t.format, t.potential, now],
+          [id, ctx.user.id, t.title, t.reason, t.format, t.potential, now],
         );
       }
       return { ids, createdAt: now };
     }),
 
-  delete: publicProcedure
-    .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-    .mutation(async ({ input }) => {
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
       await d1Execute(
         "DELETE FROM user_topics WHERE workspace_key = ? AND id = ?",
-        [input.workspaceKey, input.id],
+        [ctx.user.id, input.id],
       );
       return { ok: true };
     }),

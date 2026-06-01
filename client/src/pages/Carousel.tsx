@@ -458,7 +458,6 @@ export default function Carousel() {
     if (cloudEnabled && workspaceKey) {
       try {
         await cloudSave.mutateAsync({
-          workspaceKey,
           title: title || "Карусель",
           mode: "carousel",
           payload,
@@ -482,7 +481,7 @@ export default function Carousel() {
   const saveToPlan = (date: string) => {
     if (cloudEnabled && workspaceKey) {
       cloudSchedule.mutate(
-        { workspaceKey, date, title: title || "Карусель", format: "Карусель" },
+        { date, title: title || "Карусель", format: "Карусель" },
         {
           onSuccess: () => toast.success(`В плане на ${date}`),
           onError: (e) => toast.error(e.message),

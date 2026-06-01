@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute, isD1Configured } from "../_core/d1";
 
 /* ============================================================
@@ -77,9 +77,9 @@ export const telegramRouter = router({
 
   /* Список добавленных чатов пользователя + флаг default. */
   chats: router({
-    list: publicProcedure
-      .input(z.object({ workspaceKey: wsKey }))
-      .query(async ({ input }) => {
+    list: protectedProcedure
+      
+      .query(async ({ input, ctx }) => {
         if (!isD1Configured()) return [];
         const rows = await d1Query<{
           id: string;
@@ -89,7 +89,7 @@ export const telegramRouter = router({
           added_at: number;
         }>(
           "SELECT id, chat_id, title, is_default, added_at FROM telegram_chats WHERE workspace_key = ? ORDER BY is_default DESC, added_at DESC",
-          [input.workspaceKey],
+          [ctx.user.id],
         );
         return rows.map((r) => ({
           id: r.id,
@@ -103,15 +103,14 @@ export const telegramRouter = router({
     /* Добавляет чат и сразу проверяет, что бот может туда писать —
        через Bot API getChat. Если ответ ok — сохраняет, если нет —
        возвращает читабельную ошибку (типа «Bot is not in the chat»). */
-    add: publicProcedure
+    add: protectedProcedure
       .input(
         z.object({
-          workspaceKey: wsKey,
           chatId: chatIdSchema,
           makeDefault: z.boolean().default(false),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const botToken = process.env.TELEGRAM_BOT_TOKEN;
         if (!botToken) throw new Error("TELEGRAM_BOT_TOKEN не настроен");
 
@@ -138,41 +137,41 @@ export const telegramRouter = router({
         const now = Date.now();
         await d1Execute(
           "INSERT INTO telegram_chats (id, workspace_key, chat_id, title, is_default, added_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [id, input.workspaceKey, input.chatId, title, 0, now],
+          [id, ctx.user.id, input.chatId, title, 0, now],
         );
 
         /* Если это первый чат пользователя или makeDefault=true —
            делаем дефолтным (и снимаем флаг у других). */
         const existing = await d1Query<{ n: number }>(
           "SELECT COUNT(*) AS n FROM telegram_chats WHERE workspace_key = ?",
-          [input.workspaceKey],
+          [ctx.user.id],
         );
         const isFirst = (existing[0]?.n ?? 0) === 1;
         if (input.makeDefault || isFirst) {
           await d1Execute(
             "UPDATE telegram_chats SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE workspace_key = ?",
-            [id, input.workspaceKey],
+            [id, ctx.user.id],
           );
         }
         return { id, title, chatId: input.chatId };
       }),
 
-    setDefault: publicProcedure
-      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-      .mutation(async ({ input }) => {
+    setDefault: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input, ctx }) => {
         await d1Execute(
           "UPDATE telegram_chats SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE workspace_key = ?",
-          [input.id, input.workspaceKey],
+          [input.id, ctx.user.id],
         );
         return { ok: true };
       }),
 
-    delete: publicProcedure
-      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-      .mutation(async ({ input }) => {
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input, ctx }) => {
         await d1Execute(
           "DELETE FROM telegram_chats WHERE workspace_key = ? AND id = ?",
-          [input.workspaceKey, input.id],
+          [ctx.user.id, input.id],
         );
         return { ok: true };
       }),
@@ -180,17 +179,16 @@ export const telegramRouter = router({
 
   /* ---------- Отправка контента ---------- */
 
-  sendPost: publicProcedure
+  sendPost: protectedProcedure
     .input(
       z.object({
         content: z.string().min(1, "Контент не может быть пустым"),
         title: z.string().optional(),
-        workspaceKey: wsKey.optional(),
         chatId: chatIdSchema.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const target = await resolveChatId(input.workspaceKey, input.chatId);
+    .mutation(async ({ input, ctx }) => {
+      const target = await resolveChatId(ctx.user.id, input.chatId);
       const message = input.title
         ? `<b>${input.title}</b>\n\n${input.content}`
         : input.content;
@@ -203,17 +201,16 @@ export const telegramRouter = router({
       };
     }),
 
-  sendReelsScript: publicProcedure
+  sendReelsScript: protectedProcedure
     .input(
       z.object({
         script: z.string().min(1, "Сценарий не может быть пустым"),
         title: z.string().optional(),
-        workspaceKey: wsKey.optional(),
         chatId: chatIdSchema.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const target = await resolveChatId(input.workspaceKey, input.chatId);
+    .mutation(async ({ input, ctx }) => {
+      const target = await resolveChatId(ctx.user.id, input.chatId);
       const message = input.title
         ? `📹 <b>${input.title}</b>\n\n${input.script}`
         : `📹 <b>Сценарий Reels</b>\n\n${input.script}`;
@@ -226,18 +223,17 @@ export const telegramRouter = router({
       };
     }),
 
-  sendBoth: publicProcedure
+  sendBoth: protectedProcedure
     .input(
       z.object({
         post: z.string().min(1),
         script: z.string().min(1),
         title: z.string().optional(),
-        workspaceKey: wsKey.optional(),
         chatId: chatIdSchema.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const target = await resolveChatId(input.workspaceKey, input.chatId);
+    .mutation(async ({ input, ctx }) => {
+      const target = await resolveChatId(ctx.user.id, input.chatId);
       const postMsg = input.title
         ? `<b>${input.title}</b>\n\n${input.post}`
         : input.post;

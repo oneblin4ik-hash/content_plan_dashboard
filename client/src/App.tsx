@@ -15,7 +15,6 @@ import Carousel from "./pages/Carousel";
 import Plan from "./pages/Plan";
 import Settings from "./pages/Settings";
 import Trends from "./pages/Trends";
-import Media from "./pages/Media";
 import Integrations from "./pages/Integrations";
 import Voice from "./pages/Voice";
 import Pricing from "./pages/Pricing";
@@ -85,7 +84,6 @@ function Router() {
       <Route path="/carousel" component={Carousel} />
       <Route path="/voice" component={Voice} />
       <Route path="/trends" component={Trends} />
-      <Route path="/media" component={Media} />
       <Route path="/plan" component={Plan} />
       <Route path="/library" component={Plan} />
       <Route path="/calendar" component={Plan} />

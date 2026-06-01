@@ -11,8 +11,7 @@ export default function Integrations() {
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const [channel, setChannel] = useState("");
 
-  const integrations = trpc.integrations.get.useQuery(
-    { workspaceKey },
+  const integrations = trpc.integrations.get.useQuery(undefined,
     { enabled: cloudEnabled && workspaceKey.length > 0 },
   );
   const syncMutation = trpc.integrations.syncTelegram.useMutation({
@@ -111,7 +110,7 @@ export default function Integrations() {
               />
               <button
                 onClick={() =>
-                  syncMutation.mutate({ workspaceKey, channel: channel || tg?.channel?.replace(/^@/, "") || "" })
+                  syncMutation.mutate({ channel: channel || tg?.channel?.replace(/^@/, "") || "" })
                 }
                 disabled={syncMutation.isPending || (!channel && !tg?.channel)}
                 className="btn-gold"
@@ -195,7 +194,7 @@ export default function Integrations() {
               </div>
               {vp && (
                 <button
-                  onClick={() => clearVoiceMutation.mutate({ workspaceKey })}
+                  onClick={() => clearVoiceMutation.mutate()}
                   style={{
                     background: "transparent",
                     border: "1px solid rgba(255,255,255,0.08)",
@@ -215,7 +214,7 @@ export default function Integrations() {
             </div>
 
             <button
-              onClick={() => analyzeMutation.mutate({ workspaceKey })}
+              onClick={() => analyzeMutation.mutate()}
               disabled={
                 analyzeMutation.isPending || !tg?.posts || tg.posts.length < 3
               }

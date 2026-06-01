@@ -16,7 +16,7 @@
  * распространяется.
  */
 import { TRPCError } from "@trpc/server";
-import { invokeLLM } from "./llm";
+import { invokeLLM, type InvokeParams, type InvokeResult } from "./llm";
 import { d1Execute, d1Query } from "./d1";
 import { buildSystemPrompt, type VoiceConfig } from "./voice-config";
 import { loadPerformanceContext } from "./performance";
@@ -38,7 +38,7 @@ async function loadUserVoice(userId: string): Promise<VoiceConfig | null> {
   }
 }
 
-function assertCanGenerate(user: AuthUser) {
+export function assertCanGenerate(user: AuthUser) {
   /* Админу — безлимит: не проверяем триал и баланс, не списываем
      токены. Чтобы я мог пользоваться сервисом, не тратя пробный
      бюджет, и тестировать долгие LLM-сессии без оглядки на лимит. */
@@ -118,4 +118,37 @@ export async function invokeForUser(
   }
 
   return { text: out, model };
+}
+
+/**
+ * Облегчённая обёртка для роутеров, которые сами строят свой
+ * системный промпт (topics.generate, competitors.analyze, integrations.
+ * analyzeVoice, metrics.insights). Делает то же самое, что
+ * invokeForUser, но без подмешивания voice/performance — потому что
+ * там специализированные задачи (структурированный JSON, анализ
+ * корпуса постов), где зашитый «голос автора» только мешал бы.
+ *
+ * Контракт: trial/tokens guard срабатывает, токены списываются по
+ * usage.total_tokens — иначе любой бесплатный юзер сможет жечь
+ * безлимит через прокладку этих роутеров.
+ */
+export async function invokeRawForUser(
+  user: AuthUser,
+  params: InvokeParams,
+): Promise<InvokeResult> {
+  assertCanGenerate(user);
+  const r = await invokeLLM(params);
+  if (user.role === "admin") return r;
+  const used = r.usage?.total_tokens;
+  if (typeof used === "number" && used > 0) {
+    try {
+      await d1Execute(
+        "UPDATE users SET tokens_remaining = MAX(0, tokens_remaining - ?), tokens_used_total = tokens_used_total + ? WHERE id = ?",
+        [used, used, user.id],
+      );
+    } catch {
+      /* не блокируем результат при инфраструктурной проблеме */
+    }
+  }
+  return r;
 }

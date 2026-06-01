@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute, isD1Configured } from "../_core/d1";
 
 /**
@@ -27,14 +27,14 @@ const modeEnum = z.enum([
 
 export const syncRouter = router({
   /** Lightweight health check the client uses to decide localStorage vs cloud. */
-  status: publicProcedure.query(() => ({
+  status: protectedProcedure.query(() => ({
     enabled: isD1Configured(),
   })),
 
   library: router({
-    list: publicProcedure
-      .input(z.object({ workspaceKey: wsKey, limit: z.number().int().min(1).max(200).default(100) }))
-      .query(async ({ input }) => {
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(200).default(100) }))
+      .query(async ({ input, ctx }) => {
         const rows = await d1Query<{
           id: string;
           title: string;
@@ -44,7 +44,7 @@ export const syncRouter = router({
           created_at: number;
         }>(
           "SELECT id, title, mode, platform, payload_json, created_at FROM generations WHERE workspace_key = ? ORDER BY created_at DESC LIMIT ?",
-          [input.workspaceKey, input.limit]
+          [ctx.user.id, input.limit]
         );
         return rows.map((r) => ({
           id: r.id,
@@ -56,10 +56,9 @@ export const syncRouter = router({
         }));
       }),
 
-    save: publicProcedure
+    save: protectedProcedure
       .input(
         z.object({
-          workspaceKey: wsKey,
           id: z.string().uuid().optional(),
           title: z.string().min(1),
           mode: modeEnum,
@@ -67,14 +66,14 @@ export const syncRouter = router({
           payload: z.unknown(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const id = input.id ?? crypto.randomUUID();
         const now = Date.now();
         await d1Execute(
           "INSERT INTO generations (id, workspace_key, title, mode, platform, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
           [
             id,
-            input.workspaceKey,
+            ctx.user.id,
             input.title,
             input.mode,
             input.platform ?? null,
@@ -85,30 +84,30 @@ export const syncRouter = router({
         return { id, createdAt: now };
       }),
 
-    delete: publicProcedure
-      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-      .mutation(async ({ input }) => {
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input, ctx }) => {
         await d1Execute(
           "DELETE FROM generations WHERE workspace_key = ? AND id = ?",
-          [input.workspaceKey, input.id]
+          [ctx.user.id, input.id]
         );
         return { ok: true };
       }),
 
-    clear: publicProcedure
-      .input(z.object({ workspaceKey: wsKey }))
-      .mutation(async ({ input }) => {
+    clear: protectedProcedure
+      
+      .mutation(async ({ input, ctx }) => {
         await d1Execute("DELETE FROM generations WHERE workspace_key = ?", [
-          input.workspaceKey,
+          ctx.user.id,
         ]);
         return { ok: true };
       }),
   }),
 
   scheduled: router({
-    list: publicProcedure
-      .input(z.object({ workspaceKey: wsKey }))
-      .query(async ({ input }) => {
+    list: protectedProcedure
+      
+      .query(async ({ input, ctx }) => {
         const rows = await d1Query<{
           id: string;
           date: string;
@@ -119,7 +118,7 @@ export const syncRouter = router({
           created_at: number;
         }>(
           "SELECT id, date, title, format, topic_id, status, created_at FROM scheduled WHERE workspace_key = ? ORDER BY date ASC",
-          [input.workspaceKey]
+          [ctx.user.id]
         );
         return rows.map((r) => ({
           id: r.id,
@@ -132,10 +131,9 @@ export const syncRouter = router({
         }));
       }),
 
-    save: publicProcedure
+    save: protectedProcedure
       .input(
         z.object({
-          workspaceKey: wsKey,
           id: z.string().uuid().optional(),
           date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           title: z.string().min(1),
@@ -143,13 +141,13 @@ export const syncRouter = router({
           topicId: z.number().int().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const id = input.id ?? crypto.randomUUID();
         await d1Execute(
           "INSERT INTO scheduled (id, workspace_key, date, title, format, topic_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)",
           [
             id,
-            input.workspaceKey,
+            ctx.user.id,
             input.date,
             input.title,
             input.format ?? null,
@@ -160,27 +158,26 @@ export const syncRouter = router({
         return { id };
       }),
 
-    delete: publicProcedure
-      .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-      .mutation(async ({ input }) => {
+    delete: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ input, ctx }) => {
         await d1Execute(
           "DELETE FROM scheduled WHERE workspace_key = ? AND id = ?",
-          [input.workspaceKey, input.id]
+          [ctx.user.id, input.id]
         );
         return { ok: true };
       }),
 
-    update: publicProcedure
+    update: protectedProcedure
       .input(
         z.object({
-          workspaceKey: wsKey,
           id: z.string(),
           date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
           title: z.string().min(1).optional(),
           format: z.string().optional(),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const sets: string[] = [];
         const params: (string | number | null)[] = [];
         if (input.date !== undefined) {
@@ -196,7 +193,7 @@ export const syncRouter = router({
           params.push(input.format ?? null);
         }
         if (sets.length === 0) return { ok: true };
-        params.push(input.workspaceKey, input.id);
+        params.push(ctx.user.id, input.id);
         await d1Execute(
           `UPDATE scheduled SET ${sets.join(", ")} WHERE workspace_key = ? AND id = ?`,
           params,
@@ -206,9 +203,9 @@ export const syncRouter = router({
   }),
 
   publishedState: router({
-    list: publicProcedure
-      .input(z.object({ workspaceKey: wsKey }))
-      .query(async ({ input }) => {
+    list: protectedProcedure
+      
+      .query(async ({ input, ctx }) => {
         return await d1Query<{
           topic_id: number;
           published: number;
@@ -216,21 +213,20 @@ export const syncRouter = router({
           engagement_rate_x100: number;
         }>(
           "SELECT topic_id, published, views, engagement_rate_x100 FROM published_state WHERE workspace_key = ?",
-          [input.workspaceKey]
+          [ctx.user.id]
         );
       }),
 
-    upsert: publicProcedure
+    upsert: protectedProcedure
       .input(
         z.object({
-          workspaceKey: wsKey,
           topicId: z.number().int(),
           published: z.boolean(),
           views: z.number().int().default(0),
           engagementRateX100: z.number().int().default(0),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         await d1Execute(
           `INSERT INTO published_state (workspace_key, topic_id, published, views, engagement_rate_x100, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)
@@ -240,7 +236,7 @@ export const syncRouter = router({
              engagement_rate_x100 = excluded.engagement_rate_x100,
              updated_at = excluded.updated_at`,
           [
-            input.workspaceKey,
+            ctx.user.id,
             input.topicId,
             input.published ? 1 : 0,
             input.views,

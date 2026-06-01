@@ -4,7 +4,6 @@ import { contentRouter } from "../server/routers/content";
 import { telegramRouter } from "../server/routers/telegram";
 import { syncRouter } from "../server/routers/sync";
 import { trendsRouter } from "../server/routers/trends";
-import { mediaRouter } from "../server/routers/media";
 import { metricsRouter } from "../server/routers/metrics";
 import { integrationsRouter } from "../server/routers/integrations";
 import { topicsRouter } from "../server/routers/topics";
@@ -19,7 +18,6 @@ export const appRouter = router({
   telegram: telegramRouter,
   sync: syncRouter,
   trends: trendsRouter,
-  media: mediaRouter,
   metrics: metricsRouter,
   integrations: integrationsRouter,
   topics: topicsRouter,

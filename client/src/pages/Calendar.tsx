@@ -35,8 +35,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const [selected, setSelected] = useState<string>(fmtDate(today));
   const [picking, setPicking] = useState(false);
 
-  const cloudList = trpc.sync.scheduled.list.useQuery(
-    { workspaceKey },
+  const cloudList = trpc.sync.scheduled.list.useQuery(undefined,
     { enabled: cloudEnabled && workspaceKey.length > 0 }
   );
   const cloudSave = trpc.sync.scheduled.save.useMutation({
@@ -96,7 +95,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const itemsForDate = (dateStr: string) => items.filter((i) => i.date === dateStr);
 
   const removeItem = (id: string) => {
-    if (cloudEnabled) cloudDelete.mutate({ workspaceKey, id });
+    if (cloudEnabled) cloudDelete.mutate({ id });
     else {
       localCalendar.remove(id);
       setLocalItems(localCalendar.load());
@@ -107,7 +106,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
     const it = items.find((x) => x.id === id);
     if (!it || it.date === newDate) return;
     if (cloudEnabled) {
-      cloudUpdate.mutate({ workspaceKey, id, date: newDate });
+      cloudUpdate.mutate({ id, date: newDate });
     } else {
       localCalendar.update(id, { date: newDate });
       setLocalItems(localCalendar.load());
@@ -132,7 +131,6 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
        инсёрты на одну таблицу с маленького аккаунта. */
     for (const it of plan.items) {
       await cloudSave.mutateAsync({
-        workspaceKey,
         date: it.date,
         title: it.title,
         format: it.format,
@@ -146,7 +144,6 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
     if (!topic) return;
     if (cloudEnabled) {
       cloudSave.mutate({
-        workspaceKey,
         date: selected,
         title: topic.title,
         format: topic.format,

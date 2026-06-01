@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Execute, d1Query, isD1Configured } from "../_core/d1";
-import { invokeLLM } from "../_core/llm";
+import { invokeRawForUser } from "../_core/llm-guard";
 import type { IntegrationsData, VoiceProfile } from "../_core/voice";
 
 /* ============================================================
@@ -114,21 +114,19 @@ function parseTelegramPreview(html: string): {
 }
 
 export const integrationsRouter = router({
-  status: publicProcedure.query(() => ({ enabled: isD1Configured() })),
+  status: protectedProcedure.query(() => ({ enabled: isD1Configured() })),
 
-  get: publicProcedure
-    .input(z.object({ workspaceKey: wsKey }))
-    .query(async ({ input }) => readIntegrations(input.workspaceKey)),
+  get: protectedProcedure
+    .query(async ({ input, ctx }) => readIntegrations(ctx.user.id)),
 
-  syncTelegram: publicProcedure
+  syncTelegram: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         /* Принимаем либо @username, либо t.me/<username>, либо чистое имя. */
         channel: z.string().min(2).max(64),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const cleaned = input.channel
         .trim()
         .replace(/^@/, "")
@@ -155,7 +153,7 @@ export const integrationsRouter = router({
           .reduce((a, b) => a + b, 0) /
           Math.max(1, parsed.posts.filter((p) => p.views).length) || 0;
 
-      const existing = await readIntegrations(input.workspaceKey);
+      const existing = await readIntegrations(ctx.user.id);
       const next: IntegrationsData = {
         ...existing,
         tg: {
@@ -171,7 +169,7 @@ export const integrationsRouter = router({
           synced_at: Date.now(),
         },
       };
-      await writeIntegrations(input.workspaceKey, next);
+      await writeIntegrations(ctx.user.id, next);
       return {
         subscribers: parsed.subscribers,
         avg_views: Math.round(avg),
@@ -180,10 +178,9 @@ export const integrationsRouter = router({
       };
     }),
 
-  analyzeVoice: publicProcedure
-    .input(z.object({ workspaceKey: wsKey }))
-    .mutation(async ({ input }) => {
-      const data = await readIntegrations(input.workspaceKey);
+  analyzeVoice: protectedProcedure
+    .mutation(async ({ input, ctx }) => {
+      const data = await readIntegrations(ctx.user.id);
       const posts = data.tg?.posts ?? [];
       if (posts.length < 3) {
         throw new Error(
@@ -222,7 +219,7 @@ ${block}
   "post_count_analyzed": ${sample.length}
 }`;
 
-      const r = await invokeLLM({
+      const r = await invokeRawForUser(ctx.user, {
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -248,16 +245,15 @@ ${block}
       profile.analyzed_at = Date.now();
       profile.post_count_analyzed = sample.length;
       const next: IntegrationsData = { ...data, voiceProfile: profile };
-      await writeIntegrations(input.workspaceKey, next);
+      await writeIntegrations(ctx.user.id, next);
       return profile;
     }),
 
-  clearVoice: publicProcedure
-    .input(z.object({ workspaceKey: wsKey }))
-    .mutation(async ({ input }) => {
-      const data = await readIntegrations(input.workspaceKey);
+  clearVoice: protectedProcedure
+    .mutation(async ({ input, ctx }) => {
+      const data = await readIntegrations(ctx.user.id);
       delete data.voiceProfile;
-      await writeIntegrations(input.workspaceKey, data);
+      await writeIntegrations(ctx.user.id, data);
       return { ok: true };
     }),
 });

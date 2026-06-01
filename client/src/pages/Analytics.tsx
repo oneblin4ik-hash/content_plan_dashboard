@@ -126,7 +126,7 @@ function TabBtn({
    что залетает, как использовать.
    ============================================================ */
 function CompetitorsSection() {
-  const { cloudEnabled } = useWorkspace();
+  const { workspaceKey, cloudEnabled } = useWorkspace();
   const [, navigate] = useLocation();
   const list = trpc.competitors.list.useQuery(undefined, {
     enabled: cloudEnabled,
@@ -868,7 +868,7 @@ const EMPTY_FORM: LocalMetricForm = {
 function RealMetricsSection() {
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const list = trpc.metrics.list.useQuery(
-    { workspaceKey: workspaceKey ?? "", limit: 100 },
+    { limit: 100 },
     { enabled: !!workspaceKey && cloudEnabled },
   );
   const add = trpc.metrics.add.useMutation({
@@ -980,7 +980,7 @@ function RealMetricsSection() {
         <button
           onClick={() => {
             if (!workspaceKey) return;
-            insights.mutate({ workspaceKey, windowDays });
+            insights.mutate({ windowDays });
           }}
           disabled={insights.isPending || items.length < 3}
           className="btn-gold"
@@ -1100,7 +1100,6 @@ function RealMetricsSection() {
               if (!workspaceKey) return;
               if (form.postTitle.trim().length < 1) return;
               await add.mutateAsync({
-                workspaceKey,
                 postTitle: form.postTitle.trim(),
                 postType: form.postType,
                 platform: form.platform,
@@ -1342,7 +1341,6 @@ function RealMetricsSection() {
                         onClick={() => {
                           if (!workspaceKey) return;
                           update.mutate({
-                            workspaceKey,
                             id: m.id,
                             views: parseInt(editForm.views || "0", 10) || 0,
                             reactions: parseInt(editForm.reactions || "0", 10) || 0,
@@ -1416,7 +1414,7 @@ function RealMetricsSection() {
                         onClick={() => {
                           if (!workspaceKey) return;
                           if (!confirm(`Удалить «${m.postTitle.slice(0, 40)}»?`)) return;
-                          del.mutate({ workspaceKey, id: m.id });
+                          del.mutate({ id: m.id });
                         }}
                         style={{
                           background: "transparent",

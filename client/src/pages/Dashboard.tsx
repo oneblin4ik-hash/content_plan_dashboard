@@ -57,8 +57,7 @@ export default function Dashboard() {
      происходит автоматически при генерации, ручного выбора нет. */
   const [drafts, setDrafts] = useState<GeneratedDraft[]>([]);
 
-  const customTopics = trpc.topics.list.useQuery(
-    { workspaceKey },
+  const customTopics = trpc.topics.list.useQuery(undefined,
     { enabled: cloudEnabled && workspaceKey.length > 0 },
   );
   const generateTopics = trpc.topics.generate.useMutation();
@@ -98,7 +97,6 @@ export default function Dashboard() {
     }
     try {
       const res = await generateTopics.mutateAsync({
-        workspaceKey: workspaceKey || undefined,
         count: genCount,
         segment: genSegment,
         // Избегаем дублей: и стартовые темы, и уже добавленные за сессию.
@@ -112,7 +110,6 @@ export default function Dashboard() {
         return;
       }
       await saveTopicsBatch.mutateAsync({
-        workspaceKey,
         topics: res.topics,
       });
       setDrafts((prev) => [...res.topics, ...prev]);
@@ -149,7 +146,7 @@ export default function Dashboard() {
       <section style={{ padding: "64px 0 32px" }}>
         <div className="container">
           <div className="eyebrow" style={{ marginBottom: 16 }}>
-            Content Studio · Mr. Serbolin
+            Content Studio
           </div>
           <h1>
             Контент-план,{" "}
@@ -345,7 +342,6 @@ export default function Dashboard() {
                           <button
                             onClick={() =>
                               deleteTopic.mutate({
-                                workspaceKey,
                                 id: topic._customId!,
                               })
                             }

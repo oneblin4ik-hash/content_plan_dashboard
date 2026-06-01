@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute, isD1Configured } from "../_core/d1";
-import { invokeLLM } from "../_core/llm";
-import { SERBOLIN_SYSTEM_PROMPT } from "../_core/brand-knowledge";
+import { invokeRawForUser } from "../_core/llm-guard";
+import { FITNESS_BASE_SYSTEM } from "../_core/voice-config";
 
 /* ============================================================
    Metrics router — учёт реальных публикаций и AI-инсайты
@@ -62,29 +62,27 @@ function rowToMetric(r: DbMetricRow) {
 }
 
 export const metricsRouter = router({
-  status: publicProcedure.query(() => ({
+  status: protectedProcedure.query(() => ({
     enabled: isD1Configured(),
   })),
 
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         limit: z.number().int().min(1).max(500).default(100),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const rows = await d1Query<DbMetricRow>(
         "SELECT id, workspace_key, post_title, post_type, platform, topic, published_at, views, reactions, comments, saves, shares, notes, created_at FROM post_metrics WHERE workspace_key = ? ORDER BY published_at DESC LIMIT ?",
-        [input.workspaceKey, input.limit],
+        [ctx.user.id, input.limit],
       );
       return rows.map(rowToMetric);
     }),
 
-  add: publicProcedure
+  add: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         postTitle: z.string().min(1).max(300),
         postType: z.enum(["post", "reels", "carousel", "story", "other"]),
         platform: z.enum(["telegram", "instagram", "youtube", "other"]).nullable(),
@@ -98,7 +96,7 @@ export const metricsRouter = router({
         notes: z.string().max(1000).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const id = crypto.randomUUID();
       const now = Date.now();
       await d1Execute(
@@ -108,7 +106,7 @@ export const metricsRouter = router({
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          input.workspaceKey,
+          ctx.user.id,
           input.postTitle,
           input.postType,
           input.platform ?? null,
@@ -130,10 +128,9 @@ export const metricsRouter = router({
      вводе (или донабирает данные через сутки). Меняем только counter'ы
      и notes — title/type/platform/topic нечего править: ошибся —
      быстрее удалить и завести заново. */
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         id: z.string(),
         views: z.number().int().min(0),
         reactions: z.number().int().min(0),
@@ -143,7 +140,7 @@ export const metricsRouter = router({
         notes: z.string().max(1000).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       await d1Execute(
         `UPDATE post_metrics
            SET views = ?, reactions = ?, comments = ?, saves = ?, shares = ?, notes = ?
@@ -155,37 +152,36 @@ export const metricsRouter = router({
           input.saves,
           input.shares,
           input.notes ?? null,
-          input.workspaceKey,
+          ctx.user.id,
           input.id,
         ],
       );
       return { ok: true };
     }),
 
-  delete: publicProcedure
-    .input(z.object({ workspaceKey: wsKey, id: z.string() }))
-    .mutation(async ({ input }) => {
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
       await d1Execute(
         "DELETE FROM post_metrics WHERE workspace_key = ? AND id = ?",
-        [input.workspaceKey, input.id],
+        [ctx.user.id, input.id],
       );
       return { ok: true };
     }),
 
-  insights: publicProcedure
+  insights: protectedProcedure
     .input(
       z.object({
-        workspaceKey: wsKey,
         /* По умолчанию анализируем посты за последние 30 дней, но юзер
            может попросить shorter/longer window. */
         windowDays: z.number().int().min(7).max(180).default(30),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const since = Date.now() - input.windowDays * 24 * 60 * 60 * 1000;
       const rows = await d1Query<DbMetricRow>(
         "SELECT id, workspace_key, post_title, post_type, platform, topic, published_at, views, reactions, comments, saves, shares, notes, created_at FROM post_metrics WHERE workspace_key = ? AND published_at >= ? ORDER BY published_at DESC LIMIT 200",
-        [input.workspaceKey, since],
+        [ctx.user.id, since],
       );
       const metrics = rows.map(rowToMetric);
 
@@ -235,9 +231,9 @@ export const metricsRouter = router({
         )
         .join(", ")}`;
 
-      const system = `${SERBOLIN_SYSTEM_PROMPT}
+      const system = `${FITNESS_BASE_SYSTEM}
 
-Текущая задача: проанализировать накопленную статистику публикаций Эдуарда
+Текущая задача: проанализировать накопленную статистику публикаций автора
 и выдать конкретный отчёт-инсайт. Не льсти, не размазывай — это рабочий
 разбор для самого себя. Опирайся ТОЛЬКО на цифры из переданной таблицы.
 Если в данных недостаточно паттернов — так и скажи.
@@ -269,7 +265,7 @@ ${table}
 
 Сделай разбор по формату из системного промпта.`;
 
-      const r = await invokeLLM({
+      const r = await invokeRawForUser(ctx.user, {
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
