@@ -4,6 +4,7 @@ import { Loader2, Mail, Lock, User, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/contexts/AuthContext";
+import { markOnboardingPending } from "@/components/OnboardingTour";
 
 /* ============================================================
    Регистрация. Email + пароль + имя + два чекбокса согласия:
@@ -42,6 +43,9 @@ export default function SignUp() {
         consentTerms: true,
       });
       await refresh();
+      /* Ставим pending до navigate — иначе OnboardingTour на новой
+         странице успеет отрендериться раньше, чем мы запишем флаг. */
+      markOnboardingPending();
       toast.success("Аккаунт создан. Триал 3 дня активирован.");
       navigate("/");
     } catch (e) {

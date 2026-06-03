@@ -25,10 +25,13 @@ import VerifyEmail from "./pages/VerifyEmail";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import { PersonalDataConsent, Terms, Privacy } from "./pages/Legal";
+import Landing from "./pages/Landing";
 import Navigation from "./components/Navigation";
 import VerifyEmailBanner from "./components/VerifyEmailBanner";
+import OnboardingTour from "./components/OnboardingTour";
 
 const PUBLIC_PATHS = [
+  "/",
   "/signin",
   "/signup",
   "/verify-email",
@@ -78,6 +81,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/* "/" — лендинг для неавторизованных, дашборд для залогиненных.
+   wouter не умеет компонент-функцию из пропа решать условно, поэтому
+   делаем обёртку, читаем auth прямо тут. */
+function HomeRoute() {
+  const { user } = useAuth();
+  return user ? <Dashboard /> : <Landing />;
+}
+
 function Router() {
   return (
     <Switch>
@@ -89,7 +100,7 @@ function Router() {
       <Route path="/legal/personal-data" component={PersonalDataConsent} />
       <Route path="/legal/terms" component={Terms} />
       <Route path="/legal/privacy" component={Privacy} />
-      <Route path={"/"} component={Dashboard} />
+      <Route path={"/"} component={HomeRoute} />
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/carousel" component={Carousel} />
       <Route path="/voice" component={Voice} />
@@ -110,8 +121,13 @@ function Router() {
 
 function Shell() {
   const [location] = useLocation();
-  /* На auth-страницах своя простая разметка — без основной навигации. */
+  const { user } = useAuth();
+  /* На auth-страницах и лендинге своя простая разметка — без основной
+     навигации. Лендинг показывается на "/" только незалогиненным,
+     поэтому скрываем nav только в этом случае. */
+  const isLandingForGuest = location === "/" && !user;
   const hideNav =
+    isLandingForGuest ||
     location === "/signin" ||
     location === "/signup" ||
     location === "/verify-email" ||
@@ -122,6 +138,9 @@ function Shell() {
       {!hideNav && <Navigation />}
       {!hideNav && <VerifyEmailBanner />}
       <Router />
+      {/* OnboardingTour сам решает, показываться ли (по флагу
+          sessionStorage). Рендерим всегда — это дешёвый no-op. */}
+      {user && <OnboardingTour />}
     </>
   );
 }
