@@ -403,3 +403,12 @@ input, textarea, select {
 @media (min-width: 768px) {
   input, textarea, select { font-size: 14px; }
 }
+
+/* Sidebar (desktop). На mobile/tablet < 768px скрываем sidebar и
+   показываем горизонтальную полоску Navigation сверху. */
+@media (max-width: 767px) {
+  .cs-sidebar { display: none !important; }
+}
+@media (min-width: 768px) {
+  .cs-mobile-nav { display: none !important; }
+}

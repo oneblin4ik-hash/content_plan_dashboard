@@ -27,6 +27,7 @@ import ResetPassword from "./pages/ResetPassword";
 import { PersonalDataConsent, Terms, Privacy } from "./pages/Legal";
 import Landing from "./pages/Landing";
 import Navigation from "./components/Navigation";
+import Sidebar from "./components/Sidebar";
 import VerifyEmailBanner from "./components/VerifyEmailBanner";
 import OnboardingTour from "./components/OnboardingTour";
 
@@ -129,15 +130,37 @@ function Shell() {
     location === "/verify-email" ||
     location === "/forgot-password" ||
     location === "/reset-password";
+
+  if (hideNav) {
+    return (
+      <>
+        <Router />
+        {user && <OnboardingTour />}
+      </>
+    );
+  }
+
+  /* Layout с sidebar (desktop) + main. На mobile sidebar скрыт через
+     CSS, вместо него рендерится горизонтальный Navigation сверху. */
   return (
-    <>
-      {!hideNav && <Navigation />}
-      {!hideNav && <VerifyEmailBanner />}
-      <Router />
-      {/* OnboardingTour сам решает, показываться ли (по флагу
-          sessionStorage). Рендерим всегда — это дешёвый no-op. */}
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      <Sidebar />
+      <main
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div className="cs-mobile-nav">
+          <Navigation />
+        </div>
+        <VerifyEmailBanner />
+        <Router />
+      </main>
       {user && <OnboardingTour />}
-    </>
+    </div>
   );
 }
 

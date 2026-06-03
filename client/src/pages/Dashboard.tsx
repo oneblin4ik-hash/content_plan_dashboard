@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { allContentTopics, allReelsScripts, allTactics, type ContentTopic } from "@/lib/contentData";
+import { allContentTopics, allReelsScripts, allTactics, type ContentTopic, type ReelsScript } from "@/lib/contentData";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 
@@ -142,60 +142,30 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
-      {/* HERO */}
-      <section style={{ padding: "64px 0 32px" }}>
+      {/* HERO — сжатый: только заголовок и подзаголовок, без bento-стат,
+          чтобы быстрее показать список тем. Цифры всё равно есть на
+          табах. */}
+      <section style={{ padding: "40px 0 16px" }}>
         <div className="container">
-          <div className="eyebrow" style={{ marginBottom: 16 }}>
-            Content Studio
+          <div className="eyebrow" style={{ marginBottom: 12 }}>
+            Идеи
           </div>
-          <h1>
-            Контент-план,{" "}
-            <span style={{ color: "var(--brand-gold)" }}>заточенный под</span>
-            <br />
-            твою аудиторию.
+          <h1 style={{ letterSpacing: "-0.6px" }}>
+            Готовые темы{" "}
+            <span style={{ color: "var(--brand-gold)" }}>и Reels-сценарии</span>
           </h1>
           <p
             className="text-platinum"
-            style={{ maxWidth: 620, fontSize: 19, marginTop: 24, lineHeight: 1.5 }}
-          >
-            30 тем, 20 reels-сценариев, 7 тактических рекомендаций. Один аккаунт,
-            один тренер, один голос. Без воды, без «вы», без декоративных эмодзи.
-          </p>
-
-          {/* BENTO STATS */}
-          <div
-            className="grid gap-3"
             style={{
-              gridTemplateColumns: "repeat(4, 1fr)",
-              marginTop: 48,
+              maxWidth: 620,
+              fontSize: 15,
+              marginTop: 14,
+              lineHeight: 1.5,
             }}
           >
-            <StatTile
-              eyebrow="Темы"
-              value={`${mergedTopics.length}`}
-              label="готовых заголовков"
-              icon={<BookOpen className="w-5 h-5" />}
-            />
-            <StatTile
-              eyebrow="Вирусный потенциал"
-              value={`${viralCount}`}
-              label="из коллекции"
-              icon={<Zap className="w-5 h-5" />}
-              accent
-            />
-            <StatTile
-              eyebrow="Reels-сценариев"
-              value={`${reelsScripts.length}`}
-              label="готовых к съёмке"
-              icon={<Trophy className="w-5 h-5" />}
-            />
-            <StatTile
-              eyebrow="Тактик"
-              value={`${tactics.length}`}
-              label="рекомендаций по запуску"
-              icon={<Sparkles className="w-5 h-5" />}
-            />
-          </div>
+            Выбери тему — и одним кликом отправь её в Студию. Или сгенерируй
+            новые под свою аудиторию.
+          </p>
         </div>
       </section>
 
@@ -288,123 +258,30 @@ export default function Dashboard() {
                 </button>
               </div>
 
+              {/* Минималистичный список: каждая тема — одна строка.
+                  Format-бейдж слева, заголовок по центру, потенциал и
+                  «→ Студия» справа. Кнопка удаления у кастомных тем
+                  появляется при ховере. */}
               <div
-                className="grid gap-3"
                 style={{
-                  gridTemplateColumns:
-                    "repeat(auto-fill, minmax(360px, 1fr))",
+                  background: "var(--ink-2)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 14,
+                  overflow: "hidden",
                 }}
               >
-                {filtered.map((topic) => {
-                  return (
-                    <div
-                      key={topic.id}
-                      className="bento-card"
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 14,
-                      }}
-                    >
-                      <div
-                        className="flex items-start justify-between gap-3"
-                        style={{ marginBottom: 4 }}
-                      >
-                        <div className="flex items-center" style={{ gap: 8 }}>
-                          <div
-                            className="eyebrow"
-                            style={{ color: potentialColor(topic.potential) }}
-                          >
-                            {topic.potential}
-                          </div>
-                          {topic._custom && (
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                                padding: "2px 8px",
-                                borderRadius: 9999,
-                                background: "rgba(212,168,67,0.14)",
-                                color: "var(--brand-gold)",
-                                fontSize: 9,
-                                fontWeight: 700,
-                                letterSpacing: 1.2,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              <Sparkles className="w-2.5 h-2.5" />
-                              Моя
-                            </span>
-                          )}
-                        </div>
-                        {topic._custom && topic._customId && (
-                          <button
-                            onClick={() =>
-                              deleteTopic.mutate({
-                                id: topic._customId!,
-                              })
-                            }
-                            title="Удалить тему"
-                            style={{
-                              background: "transparent",
-                              border: "1px solid rgba(255,255,255,0.08)",
-                              borderRadius: 9999,
-                              padding: 6,
-                              color: "var(--muted-foreground)",
-                              cursor: "pointer",
-                              lineHeight: 0,
-                            }}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                      <h3
-                        style={{
-                          fontSize: 18,
-                          lineHeight: 1.3,
-                          letterSpacing: "-0.4px",
-                        }}
-                      >
-                        {topic.title}
-                      </h3>
-                      <p
-                        className="text-platinum"
-                        style={{ fontSize: 14, lineHeight: 1.5 }}
-                      >
-                        {topic.reason}
-                      </p>
-                      <div
-                        className="flex items-center justify-between"
-                        style={{
-                          marginTop: "auto",
-                          paddingTop: 12,
-                          borderTop: "1px solid rgba(255,255,255,0.06)",
-                          fontSize: 12,
-                        }}
-                      >
-                        <span style={{ color: "var(--muted-foreground)" }}>
-                          {topic.format}
-                        </span>
-                        <Link href={`/generator?title=${encodeURIComponent(topic.title)}`}>
-                          <span
-                            style={{
-                              color: "var(--brand-gold)",
-                              fontWeight: 600,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                            }}
-                          >
-                            Сгенерировать
-                            <ArrowUpRight className="w-3 h-3" />
-                          </span>
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
+                {filtered.map((topic, idx) => (
+                  <TopicRow
+                    key={topic.id}
+                    topic={topic}
+                    first={idx === 0}
+                    onDelete={
+                      topic._custom && topic._customId
+                        ? () => deleteTopic.mutate({ id: topic._customId! })
+                        : undefined
+                    }
+                  />
+                ))}
               </div>
 
               <p
@@ -422,47 +299,31 @@ export default function Dashboard() {
           )}
 
           {tab === "reels" && (
+            /* Reels — список свёрнутых строк с раскрытием по клику.
+               В свёрнутом виде: заголовок + превью хука. Раскрытие
+               показывает все блоки (хук/тело/триггер/CTA) и
+               действия. */
             <div
-              className="grid gap-3"
-              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))" }}
+              style={{
+                background: "var(--ink-2)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 14,
+                overflow: "hidden",
+              }}
             >
-              {reelsScripts.map((script) => (
-                <div key={script.id} className="bento-card" style={{ gap: 14 }}>
-                  <div className="eyebrow">Reels · сценарий #{script.id}</div>
-                  <h3 style={{ fontSize: 20, letterSpacing: "-0.4px" }}>
-                    {script.title}
-                  </h3>
-                  <ReelsBlock label="Хук" text={script.hook} />
-                  {script.body && <ReelsBlock label="Тело" text={script.body} />}
-                  <ReelsBlock label="Триггер" text={script.trigger} />
-                  <ReelsBlock label="CTA" text={script.cta} italic />
-                  <button
-                    onClick={() => {
-                      const full = `${script.title}\n\nХук: ${script.hook}\n${
-                        script.body ? `Тело: ${script.body}\n` : ""
-                      }Триггер: ${script.trigger}\n\nCTA: ${script.cta}`;
-                      handleCopy(full, script.id);
-                    }}
-                    className="btn-gold"
-                    style={{
-                      background: "var(--ink-2)",
-                      color: "#fff",
-                      width: "100%",
-                      justifyContent: "center",
-                      marginTop: 8,
-                    }}
-                  >
-                    {copiedId === script.id ? (
-                      <>
-                        <Check className="w-4 h-4" /> Скопировано
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" /> Скопировать сценарий
-                      </>
-                    )}
-                  </button>
-                </div>
+              {reelsScripts.map((script, idx) => (
+                <ReelsRow
+                  key={script.id}
+                  script={script}
+                  first={idx === 0}
+                  isCopied={copiedId === script.id}
+                  onCopy={() => {
+                    const full = `${script.title}\n\nХук: ${script.hook}\n${
+                      script.body ? `Тело: ${script.body}\n` : ""
+                    }Триггер: ${script.trigger}\n\nCTA: ${script.cta}`;
+                    handleCopy(full, script.id);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -920,6 +781,325 @@ function ReelsBlock({
       >
         {text}
       </p>
+    </div>
+  );
+}
+
+/* ─── Row-компоненты для списочного вида «Идей» ─────────────── */
+
+/* Одна строка темы. Format-бейдж + заголовок + потенциал-eyebrow.
+   Кнопка → ведёт в Студию с пред-заполненным title. Кастомные темы
+   получают красную trash-кнопку справа (только при ховере на десктопе,
+   всегда на тач-устройствах). */
+function TopicRow({
+  topic,
+  first,
+  onDelete,
+}: {
+  topic: DisplayTopic;
+  first: boolean;
+  onDelete?: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "14px 18px",
+        borderTop: first ? "none" : "1px solid rgba(255,255,255,0.05)",
+        transition: "background 0.12s",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.background = "rgba(255,255,255,0.03)")
+      }
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {/* Format-бейдж — компактный, монокомпактный */}
+      <span
+        style={{
+          minWidth: 70,
+          padding: "3px 9px",
+          background: "rgba(255,255,255,0.05)",
+          color: "var(--brand-platinum)",
+          borderRadius: 6,
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          textAlign: "center",
+          flexShrink: 0,
+        }}
+      >
+        {topic.format}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: "#fff",
+            lineHeight: 1.35,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {topic.title}
+          {topic._custom && (
+            <span
+              style={{
+                fontSize: 9,
+                padding: "1px 6px",
+                background: "rgba(212,168,67,0.16)",
+                color: "var(--brand-gold)",
+                borderRadius: 5,
+                fontWeight: 700,
+                letterSpacing: 0.7,
+                textTransform: "uppercase",
+              }}
+            >
+              Моя
+            </span>
+          )}
+        </div>
+      </div>
+
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          color: potentialColor(topic.potential),
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {topic.potential}
+      </span>
+
+      <Link href={`/generator?title=${encodeURIComponent(topic.title)}`}>
+        <span
+          title="Открыть в Студии"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 32,
+            borderRadius: 9999,
+            background: "transparent",
+            color: "var(--brand-gold)",
+            cursor: "pointer",
+            flexShrink: 0,
+            transition: "background 0.12s",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "rgba(212,168,67,0.14)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
+        >
+          <ArrowUpRight className="w-4 h-4" />
+        </span>
+      </Link>
+
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          title="Удалить тему"
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "var(--muted-foreground)",
+            cursor: "pointer",
+            padding: 6,
+            borderRadius: 9999,
+            flexShrink: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* Свёрнутая строка Reels-сценария. Клик по строке раскрывает блоки
+   (хук/тело/триггер/CTA) inline. В свёрнутом — превью хука одной
+   строкой с ellipsis. */
+function ReelsRow({
+  script,
+  first,
+  isCopied,
+  onCopy,
+}: {
+  script: ReelsScript;
+  first: boolean;
+  isCopied: boolean;
+  onCopy: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      style={{
+        borderTop: first ? "none" : "1px solid rgba(255,255,255,0.05)",
+      }}
+    >
+      <button
+        onClick={() => setOpen((s) => !s)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "14px 18px",
+          background: "transparent",
+          border: 0,
+          textAlign: "left",
+          cursor: "pointer",
+          color: "inherit",
+          transition: "background 0.12s",
+        }}
+        onMouseEnter={(e) =>
+          (e.currentTarget.style.background = "rgba(255,255,255,0.03)")
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.background = "transparent")
+        }
+      >
+        <span
+          style={{
+            minWidth: 70,
+            padding: "3px 9px",
+            background: "rgba(255,255,255,0.05)",
+            color: "var(--brand-platinum)",
+            borderRadius: 6,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          Reels #{script.id}
+        </span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#fff",
+              lineHeight: 1.3,
+              marginBottom: 2,
+            }}
+          >
+            {script.title}
+          </div>
+          {!open && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--muted-foreground)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {script.hook}
+            </div>
+          )}
+        </div>
+
+        <span
+          style={{
+            color: "var(--muted-foreground)",
+            fontSize: 11,
+            flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform 0.2s",
+          }}
+        >
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            padding: "0 18px 18px 102px",
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <ReelsBlock label="Хук" text={script.hook} />
+          {script.body && <ReelsBlock label="Тело" text={script.body} />}
+          <ReelsBlock label="Триггер" text={script.trigger} />
+          <ReelsBlock label="CTA" text={script.cta} italic />
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCopy();
+              }}
+              style={{
+                padding: "8px 14px",
+                background: "var(--ink-3)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 9999,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {isCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5" /> Скопировано
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" /> Скопировать сценарий
+                </>
+              )}
+            </button>
+            <Link
+              href={`/generator?title=${encodeURIComponent(script.title)}`}
+            >
+              <span
+                style={{
+                  padding: "8px 14px",
+                  background: "transparent",
+                  color: "var(--brand-gold)",
+                  border: "1px solid rgba(212,168,67,0.32)",
+                  borderRadius: 9999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                В Студию
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </span>
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
