@@ -12,6 +12,8 @@ import {
   MessageCircle,
   CreditCard,
   Crown,
+  MessageSquare,
+  Microscope,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,6 +36,7 @@ type Item = { href: string; label: string; icon: LucideIcon };
 
 const primary: Item[] = [
   { href: "/dashboard", label: "Идеи", icon: BookOpen },
+  { href: "/assistant", label: "Помощник", icon: MessageSquare },
   { href: "/generator", label: "Студия", icon: Sparkles },
   { href: "/carousel", label: "Карусели", icon: Layers },
   { href: "/plan", label: "План", icon: Calendar },
@@ -42,6 +45,7 @@ const primary: Item[] = [
 
 const utility: Item[] = [
   { href: "/trends", label: "Тренды", icon: TrendingUp },
+  { href: "/analyze", label: "Разбор поста", icon: Microscope },
   { href: "/integrations", label: "Интеграции", icon: Link2 },
   { href: "/voice", label: "Голос", icon: MessageCircle },
   { href: "/pricing", label: "Тариф", icon: CreditCard },

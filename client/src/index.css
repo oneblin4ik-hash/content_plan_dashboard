@@ -412,3 +412,22 @@ input, textarea, select {
 @media (min-width: 768px) {
   .cs-mobile-nav { display: none !important; }
 }
+
+/* Markdown в ответах ассистента и разборе постов: компактные отступы,
+   золотые заголовки, читаемые списки. Streamdown рендерит обычный HTML. */
+.assistant-md { font-size: 15px; line-height: 1.6; color: var(--foreground); }
+.assistant-md h2 {
+  font-size: 16px; font-weight: 700; color: var(--brand-gold);
+  margin: 18px 0 8px; letter-spacing: -0.2px;
+}
+.assistant-md h2:first-child { margin-top: 0; }
+.assistant-md h3 { font-size: 15px; font-weight: 700; color: #fff; margin: 14px 0 6px; }
+.assistant-md p { margin: 0 0 10px; }
+.assistant-md ul, .assistant-md ol { margin: 0 0 10px; padding-left: 20px; }
+.assistant-md li { margin: 0 0 5px; }
+.assistant-md strong { color: #fff; font-weight: 600; }
+.assistant-md a { color: var(--brand-gold); text-decoration: underline; }
+.assistant-md code {
+  background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;
+  font-size: 13px;
+}

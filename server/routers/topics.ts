@@ -36,7 +36,7 @@ type GeneratedTopic = {
 export const topicsRouter = router({
   list: protectedProcedure
     .query(async ({ input, ctx }) => {
-      if (!isD1Configured()) return [] as Array<GeneratedTopic & { id: string; createdAt: number }>;
+      if (!isD1Configured()) return [] as Array<GeneratedTopic & { id: string; createdAt: number; folderId: string | null }>;
       const rows = await d1Query<{
         id: string;
         title: string;
@@ -44,8 +44,9 @@ export const topicsRouter = router({
         format: string;
         potential: string;
         created_at: number;
+        folder_id: string | null;
       }>(
-        "SELECT id, title, reason, format, potential, created_at FROM user_topics WHERE workspace_key = ? ORDER BY created_at DESC LIMIT 200",
+        "SELECT id, title, reason, format, potential, created_at, folder_id FROM user_topics WHERE workspace_key = ? ORDER BY created_at DESC LIMIT 200",
         [ctx.user.id],
       );
       return rows.map((r) => ({
@@ -55,7 +56,73 @@ export const topicsRouter = router({
         format: r.format,
         potential: r.potential,
         createdAt: r.created_at,
+        folderId: r.folder_id ?? null,
       }));
+    }),
+
+  /* ─── Папки (коллекции) ─── */
+  listFolders: protectedProcedure.query(async ({ ctx }) => {
+    if (!isD1Configured()) return [] as Array<{ id: string; name: string; count: number }>;
+    /* Возвращаем папки + счётчик тем в каждой одним запросом через
+       LEFT JOIN, чтобы UI сразу показал «Питание · 12». */
+    const rows = await d1Query<{ id: string; name: string; created_at: number; cnt: number }>(
+      `SELECT f.id, f.name, f.created_at,
+              (SELECT COUNT(*) FROM user_topics t WHERE t.folder_id = f.id) AS cnt
+       FROM topic_folders f
+       WHERE f.workspace_key = ?
+       ORDER BY f.created_at ASC`,
+      [ctx.user.id],
+    );
+    return rows.map((r) => ({ id: r.id, name: r.name, count: Number(r.cnt) || 0 }));
+  }),
+
+  createFolder: protectedProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(40) }))
+    .mutation(async ({ input, ctx }) => {
+      const id = crypto.randomUUID();
+      await d1Execute(
+        "INSERT INTO topic_folders (id, workspace_key, name, created_at) VALUES (?, ?, ?, ?)",
+        [id, ctx.user.id, input.name, Date.now()],
+      );
+      return { id };
+    }),
+
+  renameFolder: protectedProcedure
+    .input(z.object({ id: z.string(), name: z.string().trim().min(1).max(40) }))
+    .mutation(async ({ input, ctx }) => {
+      await d1Execute(
+        "UPDATE topic_folders SET name = ? WHERE id = ? AND workspace_key = ?",
+        [input.name, input.id, ctx.user.id],
+      );
+      return { ok: true };
+    }),
+
+  deleteFolder: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      /* Темы из папки не удаляем — обнуляем привязку, чтобы они
+         вернулись в «Без папки». Сначала отвязываем, потом удаляем
+         саму папку (двумя statements — D1 без ON DELETE триггеров). */
+      await d1Execute(
+        "UPDATE user_topics SET folder_id = NULL WHERE folder_id = ? AND workspace_key = ?",
+        [input.id, ctx.user.id],
+      );
+      await d1Execute(
+        "DELETE FROM topic_folders WHERE id = ? AND workspace_key = ?",
+        [input.id, ctx.user.id],
+      );
+      return { ok: true };
+    }),
+
+  /* Переместить тему в папку (или вынуть — folderId=null). */
+  setTopicFolder: protectedProcedure
+    .input(z.object({ topicId: z.string(), folderId: z.string().nullable() }))
+    .mutation(async ({ input, ctx }) => {
+      await d1Execute(
+        "UPDATE user_topics SET folder_id = ? WHERE id = ? AND workspace_key = ?",
+        [input.folderId, input.topicId, ctx.user.id],
+      );
+      return { ok: true };
     }),
 
   generate: protectedProcedure

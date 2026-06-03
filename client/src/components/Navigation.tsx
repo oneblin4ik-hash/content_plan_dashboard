@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
-  TrendingUp, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown,
+  TrendingUp, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown, MessageSquare, Microscope,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
    Реже используемое (тренды, интеграции, голос, тариф, настройки) — в utility. */
 const primary = [
   { href: "/dashboard", label: "Идеи", icon: BookOpen },
+  { href: "/assistant", label: "Помощник", icon: MessageSquare },
   { href: "/generator", label: "Студия", icon: Sparkles },
   { href: "/carousel", label: "Карусели", icon: Layers },
   { href: "/plan", label: "План", icon: Calendar },
@@ -24,6 +25,7 @@ const primary = [
 
 const utility = [
   { href: "/trends", label: "Тренды", icon: TrendingUp },
+  { href: "/analyze", label: "Разбор", icon: Microscope },
   { href: "/integrations", label: "Интеграции", icon: Link2 },
   { href: "/voice", label: "Голос", icon: MessageCircle },
   { href: "/pricing", label: "Тариф", icon: CreditCard },

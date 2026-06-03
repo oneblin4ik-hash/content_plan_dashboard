@@ -9,6 +9,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
+import Assistant from "./pages/Assistant";
+import Analyze from "./pages/Analyze";
 import Analytics from "./pages/Analytics";
 import ContentGenerator from "./pages/ContentGenerator";
 import Carousel from "./pages/Carousel";
@@ -99,6 +101,8 @@ function Router() {
       <Route path="/legal/privacy" component={Privacy} />
       <Route path={"/"} component={Landing} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/assistant" component={Assistant} />
+      <Route path="/analyze" component={Analyze} />
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/carousel" component={Carousel} />
       <Route path="/voice" component={Voice} />

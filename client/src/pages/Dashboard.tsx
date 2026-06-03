@@ -14,6 +14,7 @@ import {
   Loader2,
   Trash2,
   X,
+  Folder as FolderIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { allContentTopics, allReelsScripts, allTactics, type ContentTopic, type ReelsScript } from "@/lib/contentData";
@@ -33,7 +34,11 @@ const potentialColor = (p: string) => {
 
 /* Темы юзера (D1) приводим к тому же формату, что захардкоженный
    contentData, чтобы рендерить одной разметкой. */
-type DisplayTopic = ContentTopic & { _custom?: boolean; _customId?: string };
+type DisplayTopic = ContentTopic & {
+  _custom?: boolean;
+  _customId?: string;
+  _folderId?: string | null;
+};
 type GeneratedDraft = {
   title: string;
   reason: string;
@@ -57,15 +62,38 @@ export default function Dashboard() {
      происходит автоматически при генерации, ручного выбора нет. */
   const [drafts, setDrafts] = useState<GeneratedDraft[]>([]);
 
+  /* Активная папка-фильтр: null = «Все», "none" = «Без папки»,
+     иначе — id папки. */
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+
   const customTopics = trpc.topics.list.useQuery(undefined,
     { enabled: cloudEnabled && workspaceKey.length > 0 },
   );
+  const folders = trpc.topics.listFolders.useQuery(undefined, {
+    enabled: cloudEnabled && workspaceKey.length > 0,
+  });
   const generateTopics = trpc.topics.generate.useMutation();
   const saveTopicsBatch = trpc.topics.saveBatch.useMutation({
     onSuccess: () => customTopics.refetch(),
   });
   const deleteTopic = trpc.topics.delete.useMutation({
     onSuccess: () => customTopics.refetch(),
+  });
+  const createFolder = trpc.topics.createFolder.useMutation({
+    onSuccess: () => folders.refetch(),
+  });
+  const deleteFolderM = trpc.topics.deleteFolder.useMutation({
+    onSuccess: () => {
+      folders.refetch();
+      customTopics.refetch();
+      setActiveFolder(null);
+    },
+  });
+  const setTopicFolder = trpc.topics.setTopicFolder.useMutation({
+    onSuccess: () => {
+      customTopics.refetch();
+      folders.refetch();
+    },
   });
 
   /* Объединяем кастомные (новее) и захардкоженные темы. Кастомные
@@ -81,6 +109,7 @@ export default function Dashboard() {
       potential: t.potential,
       _custom: true,
       _customId: t.id,
+      _folderId: t.folderId,
     }));
     const fromStatic: DisplayTopic[] = staticTopics.map((t) => ({ ...t }));
     return [...custom, ...fromStatic];
@@ -126,10 +155,19 @@ export default function Dashboard() {
 
   const filtered = useMemo(
     () =>
-      mergedTopics.filter((t) =>
-        t.title.toLowerCase().includes(searchTerm.toLowerCase()),
-      ),
-    [mergedTopics, searchTerm],
+      mergedTopics.filter((t) => {
+        if (!t.title.toLowerCase().includes(searchTerm.toLowerCase()))
+          return false;
+        /* Папка-фильтр. «Все» (null) — без фильтра. «Без папки»
+           ("none") — кастомные без folder_id + все статичные (они
+           вне системы папок). Конкретная папка — только кастомные с
+           этим folder_id. */
+        if (activeFolder === null) return true;
+        if (activeFolder === "none")
+          return !t._custom || !t._folderId;
+        return t._custom && t._folderId === activeFolder;
+      }),
+    [mergedTopics, searchTerm, activeFolder],
   );
 
   const viralCount = mergedTopics.filter((t) => t.potential === "Вирусный").length;
@@ -258,6 +296,17 @@ export default function Dashboard() {
                 </button>
               </div>
 
+              {/* Чипы-папки (коллекции). Показываем только в облаке. */}
+              {cloudEnabled && (
+                <FolderChips
+                  folders={folders.data ?? []}
+                  active={activeFolder}
+                  onPick={setActiveFolder}
+                  onCreate={(name) => createFolder.mutate({ name })}
+                  onDelete={(id) => deleteFolderM.mutate({ id })}
+                />
+              )}
+
               {/* Минималистичный список: каждая тема — одна строка.
                   Format-бейдж слева, заголовок по центру, потенциал и
                   «→ Студия» справа. Кнопка удаления у кастомных тем
@@ -275,6 +324,12 @@ export default function Dashboard() {
                     key={topic.id}
                     topic={topic}
                     first={idx === 0}
+                    folders={folders.data ?? []}
+                    canFolder={cloudEnabled && !!topic._custom && !!topic._customId}
+                    onSetFolder={(folderId) =>
+                      topic._customId &&
+                      setTopicFolder.mutate({ topicId: topic._customId, folderId })
+                    }
                     onDelete={
                       topic._custom && topic._customId
                         ? () => deleteTopic.mutate({ id: topic._customId! })
@@ -794,12 +849,19 @@ function ReelsBlock({
 function TopicRow({
   topic,
   first,
+  folders,
+  canFolder,
+  onSetFolder,
   onDelete,
 }: {
   topic: DisplayTopic;
   first: boolean;
+  folders: { id: string; name: string; count: number }[];
+  canFolder: boolean;
+  onSetFolder: (folderId: string | null) => void;
   onDelete?: () => void;
 }) {
+  const [folderMenu, setFolderMenu] = useState(false);
   return (
     <div
       style={{
@@ -907,6 +969,83 @@ function TopicRow({
           <ArrowUpRight className="w-4 h-4" />
         </span>
       </Link>
+
+      {canFolder && (
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <button
+            onClick={() => setFolderMenu((s) => !s)}
+            title="Папка"
+            style={{
+              background: topic._folderId ? "rgba(212,168,67,0.14)" : "transparent",
+              border: 0,
+              color: topic._folderId ? "var(--brand-gold)" : "var(--muted-foreground)",
+              cursor: "pointer",
+              padding: 6,
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <FolderIcon className="w-3.5 h-3.5" />
+          </button>
+          {folderMenu && (
+            <>
+              {/* клик вне меню — закрыть */}
+              <div
+                onClick={() => setFolderMenu(false)}
+                style={{ position: "fixed", inset: 0, zIndex: 30 }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  right: 0,
+                  zIndex: 31,
+                  minWidth: 180,
+                  background: "var(--ink-3)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 10,
+                  padding: 4,
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+                }}
+              >
+                <FolderMenuItem
+                  label="Без папки"
+                  active={!topic._folderId}
+                  onClick={() => {
+                    onSetFolder(null);
+                    setFolderMenu(false);
+                  }}
+                />
+                {folders.map((f) => (
+                  <FolderMenuItem
+                    key={f.id}
+                    label={f.name}
+                    active={topic._folderId === f.id}
+                    onClick={() => {
+                      onSetFolder(f.id);
+                      setFolderMenu(false);
+                    }}
+                  />
+                ))}
+                {folders.length === 0 && (
+                  <div
+                    style={{
+                      padding: "8px 10px",
+                      fontSize: 11,
+                      color: "var(--muted-foreground)",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Создай папку кнопкой «+ Папка» выше
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {onDelete && (
         <button
@@ -1101,5 +1240,198 @@ function ReelsRow({
         </div>
       )}
     </div>
+  );
+}
+
+/* Чипы-папки над списком тем. «Все» / «Без папки» / папки + «+ Папка».
+   Активная папка подсвечена золотым. Долгое нажатие/правый клик не
+   используем — удаление папки через ✕ на активном чипе. */
+function FolderChips({
+  folders,
+  active,
+  onPick,
+  onCreate,
+  onDelete,
+}: {
+  folders: { id: string; name: string; count: number }[];
+  active: string | null;
+  onPick: (v: string | null) => void;
+  onCreate: (name: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+
+  const chip = (
+    key: string | null,
+    label: string,
+    count?: number,
+    removable?: string,
+  ) => {
+    const isActive = active === key;
+    return (
+      <div
+        key={key ?? "all"}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 12px",
+          borderRadius: 9999,
+          background: isActive ? "var(--brand-gold)" : "var(--ink-2)",
+          color: isActive ? "var(--ink)" : "var(--brand-platinum)",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+          border: "1px solid rgba(255,255,255,0.06)",
+          whiteSpace: "nowrap",
+        }}
+        onClick={() => onPick(key)}
+      >
+        <span>{label}</span>
+        {typeof count === "number" && (
+          <span style={{ opacity: 0.65 }}>{count}</span>
+        )}
+        {removable && isActive && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm("Удалить папку? Темы останутся, но без папки."))
+                onDelete(removable);
+            }}
+            title="Удалить папку"
+            style={{ display: "inline-flex", marginLeft: 2 }}
+          >
+            <X className="w-3 h-3" />
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        marginBottom: 16,
+        alignItems: "center",
+      }}
+    >
+      {chip(null, "Все")}
+      {chip("none", "Без папки")}
+      {folders.map((f) => chip(f.id, f.name, f.count, f.id))}
+
+      {creating ? (
+        <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && name.trim()) {
+                onCreate(name.trim());
+                setName("");
+                setCreating(false);
+              } else if (e.key === "Escape") {
+                setCreating(false);
+                setName("");
+              }
+            }}
+            placeholder="Название папки"
+            style={{
+              height: 32,
+              padding: "0 12px",
+              background: "var(--ink-3)",
+              border: "1px solid rgba(212,168,67,0.4)",
+              borderRadius: 9999,
+              color: "#fff",
+              fontSize: 12,
+              outline: "none",
+              width: 150,
+            }}
+          />
+          <button
+            onClick={() => {
+              if (name.trim()) {
+                onCreate(name.trim());
+                setName("");
+              }
+              setCreating(false);
+            }}
+            style={{
+              background: "transparent",
+              border: 0,
+              color: "var(--brand-gold)",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            ОК
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setCreating(true)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "6px 12px",
+            borderRadius: 9999,
+            background: "transparent",
+            border: "1px dashed rgba(255,255,255,0.18)",
+            color: "var(--muted-foreground)",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <Plus className="w-3 h-3" />
+          Папка
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FolderMenuItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        padding: "8px 10px",
+        background: "transparent",
+        border: 0,
+        borderRadius: 7,
+        color: active ? "var(--brand-gold)" : "var(--brand-platinum)",
+        fontSize: 13,
+        cursor: "pointer",
+        textAlign: "left",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.background = "rgba(255,255,255,0.05)")
+      }
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
+      {active && <Check className="w-3.5 h-3.5" style={{ flexShrink: 0 }} />}
+    </button>
   );
 }

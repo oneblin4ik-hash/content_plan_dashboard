@@ -174,3 +174,63 @@ export async function invokeRawForUser(
   }
   return r;
 }
+
+/**
+ * Чат-режим: многоходовой диалог с контент-помощником. В отличие от
+ * invokeForUser, принимает историю сообщений (роль user/assistant),
+ * но так же подмешивает голос автора + performance context в system,
+ * проверяет guard и списывает токены.
+ *
+ * task — постановка роли ассистента (кто он, что умеет). История
+ * messages — предыдущие реплики диалога + новая реплика юзера в конце.
+ */
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+export async function invokeChatForUser(
+  user: AuthUser,
+  task: string,
+  messages: ChatMessage[],
+): Promise<GuardedResult> {
+  assertCanGenerate(user);
+
+  const [voice, perfCtx] = await Promise.all([
+    loadUserVoice(user.id),
+    loadPerformanceContext(user.id),
+  ]);
+  const baseSystem = buildSystemPrompt(voice);
+  const fullSystem = `${baseSystem}${perfCtx}\n\n${task}`;
+
+  const r = await invokeLLM({
+    messages: [
+      { role: "system", content: fullSystem },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ],
+  });
+
+  const out = r.choices[0]?.message.content;
+  if (!out || typeof out !== "string") {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "LLM вернул пустой ответ",
+    });
+  }
+  const model = (r.model ?? "").replace(/^models\//, "");
+
+  if (user.role !== "admin") {
+    const approxIn = fullSystem.length + messages.reduce((n, m) => n + m.content.length, 0);
+    const rawUsed =
+      r.usage?.total_tokens ??
+      Math.max(200, Math.ceil(approxIn / 3 + out.length / 3));
+    const used = billableTokens(rawUsed);
+    try {
+      await d1Execute(
+        "UPDATE users SET tokens_remaining = MAX(0, tokens_remaining - ?), tokens_used_total = tokens_used_total + ? WHERE id = ?",
+        [used, used, user.id],
+      );
+    } catch {
+      /* не блокируем результат */
+    }
+  }
+
+  return { text: out, model };
+}
