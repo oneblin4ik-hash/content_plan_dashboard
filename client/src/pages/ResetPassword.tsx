@@ -33,7 +33,7 @@ export default function ResetPassword() {
       await reset.mutateAsync({ token, password });
       await refresh();
       toast.success("Пароль обновлён. Ты залогинен.");
-      navigate("/");
+      navigate("/dashboard");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Не удалось сбросить пароль");
     }

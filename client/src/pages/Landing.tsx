@@ -16,6 +16,20 @@ import {
   Clock,
 } from "lucide-react";
 import { PLANS } from "@/lib/plans";
+import { useAuth } from "@/contexts/AuthContext";
+
+/* Куда ведёт основная CTA: гостя — на регистрацию, залогиненного —
+   сразу в приложение. Хук, чтобы не дублировать логику в секциях. */
+function useCtaTarget() {
+  const { user } = useAuth();
+  return user
+    ? { href: "/dashboard", primary: "В дашборд", secondary: "В дашборд" }
+    : {
+        href: "/signup",
+        primary: "Попробовать 3 дня бесплатно",
+        secondary: "Начать бесплатно",
+      };
+}
 
 /* ============================================================
    Лендинг для неавторизованных. Показывается на "/" пока юзер не
@@ -52,6 +66,7 @@ export default function Landing() {
 /* ─── Top nav (отдельная, не основная Navigation, т.к. для не-юзеров) ─ */
 
 function LandingNav() {
+  const { user } = useAuth();
   return (
     <nav
       className="frosted sticky top-0 z-40"
@@ -85,30 +100,49 @@ function LandingNav() {
           </span>
         </Link>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Link href="/signin">
-            <span
-              style={{
-                fontSize: 13,
-                color: "var(--brand-platinum)",
-                cursor: "pointer",
-                padding: "8px 14px",
-              }}
-            >
-              Войти
-            </span>
-          </Link>
-          <Link href="/signup">
-            <span
-              className="btn-gold"
-              style={{
-                padding: "10px 20px",
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              Начать бесплатно
-            </span>
-          </Link>
+          {user ? (
+            /* Залогинен — сразу в приложение, без «Войти». */
+            <Link href="/dashboard">
+              <span
+                className="btn-gold"
+                style={{
+                  padding: "10px 20px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                В дашборд
+                <ArrowRight className="w-4 h-4" />
+              </span>
+            </Link>
+          ) : (
+            <>
+              <Link href="/signin">
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "var(--brand-platinum)",
+                    cursor: "pointer",
+                    padding: "8px 14px",
+                  }}
+                >
+                  Войти
+                </span>
+              </Link>
+              <Link href="/signup">
+                <span
+                  className="btn-gold"
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Начать бесплатно
+                </span>
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
@@ -118,6 +152,7 @@ function LandingNav() {
 /* ─── Hero ──────────────────────────────────────────────────── */
 
 function Hero() {
+  const cta = useCtaTarget();
   return (
     <section
       style={{
@@ -203,7 +238,7 @@ function Hero() {
             marginBottom: 28,
           }}
         >
-          <Link href="/signup">
+          <Link href={cta.href}>
             <span
               className="btn-gold gold-glow"
               style={{
@@ -212,7 +247,7 @@ function Hero() {
                 cursor: "pointer",
               }}
             >
-              Попробовать 3 дня бесплатно
+              {cta.primary}
               <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
@@ -763,6 +798,7 @@ function CompRow({
 /* ─── Тарифы ──────────────────────────────────────────────── */
 
 function Pricing() {
+  const cta = useCtaTarget();
   return (
     <section
       id="pricing"
@@ -883,7 +919,7 @@ function Pricing() {
               >
                 {p.features.slice(0, 3).join(" · ")}
               </div>
-              <Link href="/signup">
+              <Link href={cta.href}>
                 <span
                   className="btn-gold"
                   style={{
@@ -896,7 +932,7 @@ function Pricing() {
                     color: p.highlight ? undefined : "#fff",
                   }}
                 >
-                  Начать бесплатно
+                  {cta.secondary}
                 </span>
               </Link>
             </div>
@@ -1025,6 +1061,7 @@ function FAQ() {
 /* ─── Final CTA ──────────────────────────────────────────── */
 
 function FinalCTA() {
+  const cta = useCtaTarget();
   return (
     <section
       style={{
@@ -1072,7 +1109,7 @@ function FinalCTA() {
           3 дня бесплатно, 3 000 токенов в подарок — этого хватит на 6-10
           полноценных публикаций. Без карты. Без обязательств.
         </p>
-        <Link href="/signup">
+        <Link href={cta.href}>
           <span
             className="btn-gold gold-glow"
             style={{
@@ -1081,7 +1118,7 @@ function FinalCTA() {
               cursor: "pointer",
             }}
           >
-            Попробовать бесплатно
+            {cta.primary}
             <ArrowRight className="w-5 h-5" />
           </span>
         </Link>

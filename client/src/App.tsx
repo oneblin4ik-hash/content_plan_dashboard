@@ -58,7 +58,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!user && !publicRoute) {
       navigate("/signin");
     } else if (user && (location === "/signin" || location === "/signup")) {
-      navigate("/");
+      navigate("/dashboard");
     }
   }, [ready, user, publicRoute, location, navigate]);
 
@@ -81,14 +81,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/* "/" — лендинг для неавторизованных, дашборд для залогиненных.
-   wouter не умеет компонент-функцию из пропа решать условно, поэтому
-   делаем обёртку, читаем auth прямо тут. */
-function HomeRoute() {
-  const { user } = useAuth();
-  return user ? <Dashboard /> : <Landing />;
-}
-
+/* "/" — лендинг для всех (и гостей, и залогиненных, и админа).
+   Дашборд («Идеи») живёт на /dashboard. Раньше "/" условно
+   показывал Dashboard залогиненным — теперь главная едина для всех,
+   так юзер всегда видит «витрину продукта». */
 function Router() {
   return (
     <Switch>
@@ -100,7 +96,8 @@ function Router() {
       <Route path="/legal/personal-data" component={PersonalDataConsent} />
       <Route path="/legal/terms" component={Terms} />
       <Route path="/legal/privacy" component={Privacy} />
-      <Route path={"/"} component={HomeRoute} />
+      <Route path={"/"} component={Landing} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/carousel" component={Carousel} />
       <Route path="/voice" component={Voice} />
@@ -122,12 +119,11 @@ function Router() {
 function Shell() {
   const [location] = useLocation();
   const { user } = useAuth();
-  /* На auth-страницах и лендинге своя простая разметка — без основной
-     навигации. Лендинг показывается на "/" только незалогиненным,
-     поэтому скрываем nav только в этом случае. */
-  const isLandingForGuest = location === "/" && !user;
+  /* На auth-страницах и лендинге своя разметка — без основной
+     навигации. Лендинг ("/") теперь общий для всех, у него
+     собственная адаптивная шапка (LandingNav). */
   const hideNav =
-    isLandingForGuest ||
+    location === "/" ||
     location === "/signin" ||
     location === "/signup" ||
     location === "/verify-email" ||

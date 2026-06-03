@@ -47,7 +47,7 @@ export default function SignUp() {
          странице успеет отрендериться раньше, чем мы запишем флаг. */
       markOnboardingPending();
       toast.success("Аккаунт создан. Триал 3 дня активирован.");
-      navigate("/");
+      navigate("/dashboard");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Не удалось зарегистрироваться");
     }

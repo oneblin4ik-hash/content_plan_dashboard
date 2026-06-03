@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
    объединённый раздел с табами) → Аналитика (что сработало).
    Реже используемое (тренды, интеграции, голос, тариф, настройки) — в utility. */
 const primary = [
-  { href: "/", label: "Идеи", icon: BookOpen },
+  { href: "/dashboard", label: "Идеи", icon: BookOpen },
   { href: "/generator", label: "Студия", icon: Sparkles },
   { href: "/carousel", label: "Карусели", icon: Layers },
   { href: "/plan", label: "План", icon: Calendar },

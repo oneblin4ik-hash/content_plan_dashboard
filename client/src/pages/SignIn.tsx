@@ -22,7 +22,7 @@ export default function SignIn() {
     try {
       await login.mutateAsync({ email: email.trim(), password });
       await refresh();
-      navigate("/");
+      navigate("/dashboard");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Не удалось войти");
     }
