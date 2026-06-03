@@ -24,10 +24,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- с момента регистрации; UI и серверный guard смотрят trial_ends_at.
   plan TEXT NOT NULL DEFAULT 'trial',
   trial_ends_at INTEGER NOT NULL,
-  -- Бюджет токенов на триал (списываем usage.total_tokens после каждого
-  -- ответа LLM). Когда 0 ИЛИ trial_ends_at истёк — блок генерации.
-  -- Платные планы будут обнулять/увеличивать это поле при апгрейде.
-  tokens_remaining INTEGER NOT NULL DEFAULT 30000,
+  -- Бюджет токенов на триал в «пользовательской» шкале: 1 токен
+  -- баланса = 10 реальных токенов Gemini (TOKEN_DIVISOR в
+  -- server/_core/llm-guard.ts). Списываем ceil(total_tokens/10)
+  -- после каждого ответа LLM. Когда 0 ИЛИ trial_ends_at истёк —
+  -- блок генерации. Платные планы пополняют это поле при апгрейде.
+  tokens_remaining INTEGER NOT NULL DEFAULT 3000,
   tokens_used_total INTEGER NOT NULL DEFAULT 0,
   -- Per-user настройки голоса (имя/ниша/ЦА/обращение/эмодзи и т.п.)
   -- хранятся как JSON, чтобы добавлять поля без миграций. Формат

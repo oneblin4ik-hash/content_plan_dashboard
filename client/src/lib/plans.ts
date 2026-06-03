@@ -16,8 +16,10 @@ export type Plan = {
   tagline: string;
   priceRub: number | null; // null = триал / по запросу
   pricePeriod: string;
-  /* Технические лимиты — заголовок и raw-значение. Серверная сторона
-     потом будет читать raw для enforcement (tokensPerMonth и т.д.). */
+  /* Технические лимиты. tokensPerMonth — в «пользовательской» шкале
+     баланса (1 = 10 реальных токенов Gemini, см. TOKEN_DIVISOR на
+     сервере). Серверная сторона потом будет читать это для
+     enforcement. */
   tokensPerMonth: number; // -1 = безлимит
   voiceProfiles: number; // -1 = безлимит
   competitorsTracked: number; // -1 = безлимит
@@ -42,13 +44,13 @@ export const PLANS: Plan[] = [
     tagline: "Чтобы начать выходить регулярно",
     priceRub: 590,
     pricePeriod: "₽ / мес",
-    tokensPerMonth: 60_000,
+    tokensPerMonth: 6_000,
     voiceProfiles: 1,
     competitorsTracked: 0,
     autoplanWeeks: 2,
     teamSeats: 1,
     features: [
-      "60 000 токенов в месяц",
+      "6 000 токенов в месяц",
       "1 голосовой профиль",
       "Авто-план календаря до 2 недель",
       "Карусели — экспорт PNG",
@@ -63,13 +65,13 @@ export const PLANS: Plan[] = [
     tagline: "Полноценная воронка контента и аналитика",
     priceRub: 2_490,
     pricePeriod: "₽ / мес",
-    tokensPerMonth: 300_000,
+    tokensPerMonth: 30_000,
     voiceProfiles: 3,
     competitorsTracked: 5,
     autoplanWeeks: 12,
     teamSeats: 1,
     features: [
-      "300 000 токенов в месяц",
+      "30 000 токенов в месяц",
       "3 голосовых профиля",
       "Анализ 5 конкурентов",
       "Авто-план календаря до 12 недель",

@@ -24,6 +24,26 @@ import type { AuthUser } from "./context";
 
 export type GuardedResult = { text: string; model: string };
 
+/**
+ * Делитель биллинга: 1 «токен» на балансе юзера = N реальных токенов
+ * Gemini. Сделано, чтобы цифры баланса были короче и понятнее
+ * (100 000 реальных = 10 000 на балансе). Меняешь только тут — и
+ * списание, и дефолты (TRIAL_TOKENS в auth.ts, лимиты в plans.ts)
+ * должны быть в этой же шкале.
+ *
+ * ВАЖНО: при изменении делителя нужна миграция существующих балансов
+ * (см. drizzle/d1_users_rescale.sql) — иначе старые юзеры окажутся в
+ * другой шкале.
+ */
+export const TOKEN_DIVISOR = 10;
+
+/* Переводит сырые токены Gemini в единицы баланса. Минимум 1 —
+   чтобы любое реальное обращение к LLM стоило хотя бы 1 токен и
+   нельзя было «бесплатно» спамить совсем короткими запросами. */
+export function billableTokens(rawTotalTokens: number): number {
+  return Math.max(1, Math.ceil(rawTotalTokens / TOKEN_DIVISOR));
+}
+
 async function loadUserVoice(userId: string): Promise<VoiceConfig | null> {
   try {
     const rows = await d1Query<{ voice_json: string | null }>(
@@ -100,9 +120,10 @@ export async function invokeForUser(
      (длина в word ≈ tokens / 1.3). Это конкретно для случая, когда
      usage отсутствует — лучше слегка штрафовать, чем пускать
      бесконечно. */
-  const used =
+  const rawUsed =
     r.usage?.total_tokens ??
     Math.max(200, Math.ceil(fullSystem.length / 3 + out.length / 3));
+  const used = billableTokens(rawUsed);
   /* Админу токены не списываем — у него безлимит. tokens_used_total
      обычным юзерам нужен для будущей аналитики/биллинга, админу
      бессмысленно (его генерации не считаются «продуктом»). */
@@ -139,8 +160,9 @@ export async function invokeRawForUser(
   assertCanGenerate(user);
   const r = await invokeLLM(params);
   if (user.role === "admin") return r;
-  const used = r.usage?.total_tokens;
-  if (typeof used === "number" && used > 0) {
+  const raw = r.usage?.total_tokens;
+  if (typeof raw === "number" && raw > 0) {
+    const used = billableTokens(raw);
     try {
       await d1Execute(
         "UPDATE users SET tokens_remaining = MAX(0, tokens_remaining - ?), tokens_used_total = tokens_used_total + ? WHERE id = ?",

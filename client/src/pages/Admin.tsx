@@ -297,18 +297,18 @@ function UsersTable({
                 <div style={{ display: "inline-flex", gap: 4, marginLeft: 8 }}>
                   <button
                     onClick={() =>
-                      update.mutate({ id: u.id, tokensDelta: 10_000 })
+                      update.mutate({ id: u.id, tokensDelta: 1_000 })
                     }
-                    title="+10 000 токенов"
+                    title="+1 000 токенов"
                     style={iconBtnStyle}
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() =>
-                      update.mutate({ id: u.id, tokensDelta: -10_000 })
+                      update.mutate({ id: u.id, tokensDelta: -1_000 })
                     }
-                    title="-10 000 токенов"
+                    title="-1 000 токенов"
                     style={iconBtnStyle}
                   >
                     <Minus className="w-3.5 h-3.5" />
@@ -352,7 +352,7 @@ function SetTokensButton({ onSet }: { onSet: (v: number) => void }) {
       onClick={() => {
         const raw = window.prompt(
           "Выставить баланс токенов (точная цифра):",
-          "100000",
+          "10000",
         );
         if (!raw) return;
         const n = parseInt(raw.replace(/\D/g, ""), 10);

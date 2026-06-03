@@ -28,7 +28,10 @@ import {
    ============================================================ */
 
 const TRIAL_DAYS = 3;
-const TRIAL_TOKENS = 30_000;
+/* Баланс в «пользовательской» шкале (1 = 10 реальных токенов Gemini,
+   см. TOKEN_DIVISOR в llm-guard.ts). 3 000 ≈ 30 000 реальных ≈
+   ~15 генераций для пробного периода. */
+const TRIAL_TOKENS = 3_000;
 const PASSWORD_MIN = 8;
 
 const emailSchema = z
