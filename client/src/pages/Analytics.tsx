@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Send,
   Youtube,
+  Instagram,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -158,7 +159,7 @@ function CompetitorsSection() {
   });
 
   const [newHandle, setNewHandle] = useState("");
-  const [newPlatform, setNewPlatform] = useState<"tg" | "yt">("tg");
+  const [newPlatform, setNewPlatform] = useState<"tg" | "yt" | "ig">("tg");
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
   if (!cloudEnabled) {
@@ -254,6 +255,12 @@ function CompetitorsSection() {
                 icon={<Youtube className="w-3.5 h-3.5" />}
                 label="YouTube"
               />
+              <PlatformChip
+                active={newPlatform === "ig"}
+                onClick={() => setNewPlatform("ig")}
+                icon={<Instagram className="w-3.5 h-3.5" />}
+                label="Instagram"
+              />
             </div>
             <input
               value={newHandle}
@@ -262,7 +269,9 @@ function CompetitorsSection() {
               placeholder={
                 newPlatform === "tg"
                   ? "@channel или t.me/channel"
-                  : "@handle или youtube.com/@handle"
+                  : newPlatform === "yt"
+                    ? "@handle, youtube.com/@handle или channel_id (UC…)"
+                    : "@username или instagram.com/username"
               }
               style={{
                 flex: 1,
@@ -386,7 +395,7 @@ function PlatformChip({
 
 type CompetitorChannel = {
   id: string;
-  platform: "tg" | "yt";
+  platform: "tg" | "yt" | "ig";
   handle: string;
   title: string | null;
   subscribers: number | null;
@@ -422,13 +431,19 @@ function CompetitorCard({
   const platformIcon =
     channel.platform === "tg" ? (
       <Send className="w-3.5 h-3.5" />
-    ) : (
+    ) : channel.platform === "yt" ? (
       <Youtube className="w-3.5 h-3.5" />
+    ) : (
+      <Instagram className="w-3.5 h-3.5" />
     );
   const platformUrl =
     channel.platform === "tg"
       ? `https://t.me/${channel.handle}`
-      : `https://www.youtube.com/@${channel.handle}`;
+      : channel.platform === "yt"
+        ? /^UC[\w-]{20,24}$/.test(channel.handle)
+          ? `https://www.youtube.com/channel/${channel.handle}`
+          : `https://www.youtube.com/@${channel.handle}`
+        : `https://www.instagram.com/${channel.handle}`;
   const isOk = channel.status === "ok";
 
   return (
