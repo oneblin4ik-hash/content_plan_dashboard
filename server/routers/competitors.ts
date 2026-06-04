@@ -708,7 +708,13 @@ export const competitorsRouter = router({
           cleaned,
         ],
       );
-      return { ok: true, status: r.status, postCount: r.posts.length };
+      return {
+        ok: true,
+        status: r.status,
+        postCount: r.posts.length,
+        error: r.error ?? null,
+        handle: cleaned,
+      };
     }),
 
   remove: protectedProcedure

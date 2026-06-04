@@ -149,8 +149,15 @@ function CompetitorsSection() {
   const addChannel = trpc.competitors.add.useMutation({
     onSuccess: (r) => {
       list.refetch();
-      if (r.status === "ok") toast.success(`Добавлен, ${r.postCount} постов`);
-      else toast.error(`Добавлен, но не отдал постов (${r.status})`);
+      if (r.status === "ok") {
+        toast.success(`@${r.handle} добавлен — ${r.postCount} постов`);
+      } else {
+        /* Показываем конкретную подсказку с сервера (например, для YT
+           «вставь channel_id»), а не сухой код статуса. */
+        toast.error(r.error || `Не удалось получить посты (${r.status})`, {
+          duration: 7000,
+        });
+      }
     },
     onError: (e) => toast.error(e.message),
   });
@@ -179,14 +186,11 @@ function CompetitorsSection() {
   const okCount = channels.filter((c) => c.status === "ok").length;
 
   const handleAdd = () => {
-    const cleaned = newHandle
-      .trim()
-      .replace(/^@/, "")
-      .replace(/^https?:\/\/(www\.)?youtube\.com\/@?/i, "")
-      .replace(/^https?:\/\/(www\.)?t\.me\/(s\/)?/i, "")
-      .replace(/\/.*$/, "");
-    if (!cleaned) return;
-    addChannel.mutate({ platform: newPlatform, handle: cleaned });
+    /* Передаём сырой ввод — сервер сам нормализует @handle / ссылку /
+       channel_id под платформу (normalizeHandle в competitors router). */
+    const raw = newHandle.trim();
+    if (!raw) return;
+    addChannel.mutate({ platform: newPlatform, handle: raw });
     setNewHandle("");
   };
 
@@ -1019,6 +1023,9 @@ function RealMetricsSection() {
         </button>
       </div>
 
+      {/* Сводный дашборд + график — появляется, когда есть данные. */}
+      {items.length > 0 && <MetricsSummary items={items} />}
+
       {showForm && (
         <div className="bento-card" style={{ padding: 20, marginBottom: 24 }}>
           <div className="grid gap-3 md:grid-cols-3">
@@ -1465,3 +1472,242 @@ const metricInputStyle: React.CSSProperties = {
   fontFamily: "var(--font-body)",
   width: "100%",
 };
+
+/* ─── Сводный дашборд по своим публикациям (P: «довести до идеала») ───
+   Считает агрегаты по всем загруженным метрикам и рисует мини-график
+   ER по последним постам. Всё считается на клиенте из уже полученного
+   списка — без доп. запросов. */
+type MetricItem = {
+  id: string;
+  postTitle: string;
+  postType: string;
+  platform: string | null;
+  topic: string | null;
+  publishedAt: number;
+  views: number;
+  reactions: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  erPercent: number;
+};
+
+const POST_TYPE_LABELS: Record<string, string> = {
+  post: "Посты",
+  reels: "Reels",
+  carousel: "Карусели",
+  story: "Stories",
+  other: "Другое",
+};
+
+function MetricsSummary({ items }: { items: MetricItem[] }) {
+  const n = items.length;
+  const totalViews = items.reduce((s, m) => s + m.views, 0);
+  const totalEng = items.reduce(
+    (s, m) => s + m.reactions + m.comments + m.saves + m.shares,
+    0,
+  );
+  /* Средний ER считаем по постам с просмотрами, чтобы посты без
+     указанных views не занижали среднее нулями. */
+  const withViews = items.filter((m) => m.views > 0);
+  const avgER =
+    withViews.length > 0
+      ? withViews.reduce((s, m) => s + m.erPercent, 0) / withViews.length
+      : 0;
+
+  const best = withViews.length
+    ? [...withViews].sort((a, b) => b.erPercent - a.erPercent)[0]
+    : null;
+
+  /* Лучший формат по среднему ER (минимум 1 пост в формате). */
+  const byFormat = new Map<string, { sum: number; count: number }>();
+  for (const m of withViews) {
+    const e = byFormat.get(m.postType) ?? { sum: 0, count: 0 };
+    e.sum += m.erPercent;
+    e.count += 1;
+    byFormat.set(m.postType, e);
+  }
+  const formatAverages = Array.from(byFormat.entries())
+    .map(([type, { sum, count }]) => ({ type, avg: sum / count }))
+    .sort((a, b) => b.avg - a.avg);
+  const bestFormat = formatAverages[0] ?? null;
+
+  return (
+    <div style={{ marginBottom: 24, display: "grid", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <SummaryTile label="Публикаций" value={String(n)} />
+        <SummaryTile label="Всего просмотров" value={fmtNum(totalViews)} />
+        <SummaryTile
+          label="Вовлечений"
+          value={fmtNum(totalEng)}
+          hint="реакции + комменты + сохранения + репосты"
+        />
+        <SummaryTile
+          label="Средний ER"
+          value={`${avgER.toFixed(1)}%`}
+          accent
+        />
+        <SummaryTile
+          label="Лучший формат"
+          value={bestFormat ? POST_TYPE_LABELS[bestFormat.type] ?? bestFormat.type : "—"}
+          hint={bestFormat ? `средний ER ${bestFormat.avg.toFixed(1)}%` : undefined}
+        />
+      </div>
+
+      {best && (
+        <div
+          className="bento-card"
+          style={{
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            borderLeft: "3px solid var(--brand-gold)",
+          }}
+        >
+          <Sparkles
+            className="w-4 h-4"
+            style={{ color: "var(--brand-gold)", flexShrink: 0 }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+              Топ-пост по вовлечённости:{" "}
+            </span>
+            <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>
+              «{best.postTitle}»
+            </span>
+            <span style={{ fontSize: 12, color: "var(--brand-gold)", marginLeft: 6 }}>
+              ER {best.erPercent.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      <ERChart items={items} />
+    </div>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="bento-card" style={{ padding: 16 }} title={hint}>
+      <div
+        className="eyebrow"
+        style={{ marginBottom: 6, fontSize: 10 }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 24,
+          fontWeight: 700,
+          color: accent ? "var(--brand-gold)" : "#fff",
+          letterSpacing: "-0.5px",
+          lineHeight: 1,
+        }}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div
+          style={{
+            fontSize: 10,
+            color: "var(--muted-foreground)",
+            marginTop: 4,
+            lineHeight: 1.3,
+          }}
+        >
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Мини-график ER по последним 16 постам (хронологически). Чистый SVG,
+   без библиотек. Высота столбца ∝ ER, заливка золотом, лучший —
+   ярче. Ховер показывает заголовок и ER. */
+function ERChart({ items }: { items: MetricItem[] }) {
+  const data = [...items]
+    .filter((m) => m.views > 0)
+    .sort((a, b) => a.publishedAt - b.publishedAt)
+    .slice(-16);
+  if (data.length < 2) return null;
+
+  const maxER = Math.max(...data.map((m) => m.erPercent), 0.1);
+  const W = 100;
+  const gap = 1.2;
+  const barW = (W - gap * (data.length - 1)) / data.length;
+  const bestER = Math.max(...data.map((m) => m.erPercent));
+
+  return (
+    <div className="bento-card" style={{ padding: 18 }}>
+      <div
+        className="eyebrow"
+        style={{ marginBottom: 14, fontSize: 10 }}
+      >
+        Динамика ER · последние {data.length} постов
+      </div>
+      <svg
+        viewBox={`0 0 ${W} 36`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: 90, display: "block", overflow: "visible" }}
+      >
+        {data.map((m, i) => {
+          const h = Math.max(1.5, (m.erPercent / maxER) * 32);
+          const x = i * (barW + gap);
+          const isBest = m.erPercent === bestER;
+          return (
+            <g key={m.id}>
+              <rect
+                x={x}
+                y={34 - h}
+                width={barW}
+                height={h}
+                rx={0.6}
+                fill={isBest ? "var(--brand-gold)" : "rgba(212,168,67,0.4)"}
+              >
+                <title>{`${m.postTitle}\nER ${m.erPercent.toFixed(1)}% · ${fmtNum(m.views)} просмотров`}</title>
+              </rect>
+            </g>
+          );
+        })}
+      </svg>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 8,
+          fontSize: 10,
+          color: "var(--muted-foreground)",
+        }}
+      >
+        <span>{new Date(data[0].publishedAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "short" })}</span>
+        <span>пик ER {bestER.toFixed(1)}%</span>
+        <span>{new Date(data[data.length - 1].publishedAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "short" })}</span>
+      </div>
+    </div>
+  );
+}
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
