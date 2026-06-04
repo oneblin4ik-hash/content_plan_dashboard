@@ -4,6 +4,7 @@ import { Sparkles, Send, Loader2, Wand2, RotateCcw } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { CostBadge } from "@/components/CostBadge";
 
 /* ============================================================
    /assistant — контент-помощник в формате чата.
@@ -253,15 +254,25 @@ export default function Assistant() {
               color: "var(--muted-foreground)",
               textAlign: "center",
               marginTop: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              flexWrap: "wrap",
             }}
           >
-            Помощник советует и направляет. Для готового текста —{" "}
-            <Link href="/generator">
-              <span style={{ color: "var(--brand-gold)", cursor: "pointer" }}>
-                открой Студию
-              </span>
-            </Link>
-            .
+            <span>
+              Помощник советует и направляет. Для готового текста —{" "}
+              <Link href="/generator">
+                <span style={{ color: "var(--brand-gold)", cursor: "pointer" }}>
+                  открой Студию
+                </span>
+              </Link>
+              .
+            </span>
+            <span style={{ opacity: 0.7 }}>·</span>
+            <span>один ответ</span>
+            <CostBadge action="assistant" />
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { CostBadge } from "@/components/CostBadge";
 
 /* Раздел /analytics состоит из двух табов:
    - «Конкуренты» — публичный парсинг TG + YouTube + AI-анализ
@@ -679,6 +680,7 @@ function CompetitorCard({
             <>
               <Brain className="w-4 h-4" />
               {channel.analysis ? "Переанализировать" : "Разобрать"}
+              <CostBadge action="analyzeChannel" />
             </>
           )}
         </button>
@@ -1018,6 +1020,7 @@ function RealMetricsSection() {
           ) : (
             <>
               <Brain className="w-4 h-4" /> Получить AI-инсайты
+              <CostBadge action="insights" />
             </>
           )}
         </button>

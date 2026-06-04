@@ -25,8 +25,22 @@ import { Streamdown } from "streamdown";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localLibrary, localCalendar, type Mode } from "@/lib/syncStorage";
 import { getTemplate } from "@/lib/viralTemplates";
+import type { LlmActionId } from "@/lib/pricing";
+import { CostBadge } from "@/components/CostBadge";
 import HistoryDrawer from "@/components/HistoryDrawer";
 import { toast } from "sonner";
+
+/* Mode → id операции для бейджа стоимости. «pack» дороже одного
+   поста, потому что внутри это объединённый вызов с большим
+   контекстом. */
+function modeToAction(mode: Mode): LlmActionId {
+  if (mode === "pack") return "fullPack";
+  if (mode === "reels") return "reels";
+  if (mode === "hooks") return "hooks";
+  if (mode === "hashtags") return "hashtags";
+  if (mode === "carousel") return "carousel";
+  return "post";
+}
 
 /* 8 тонов — синхронизировано с TONES в server/routers/content.ts */
 const TONE_OPTIONS = [
@@ -526,6 +540,9 @@ export default function ContentGenerator() {
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" /> Сгенерировать
+                    {/* Бейдж стоимости зависит от выбранного режима;
+                        для админа CostBadge сам не отрисуется. */}
+                    <CostBadge action={modeToAction(mode)} />
                   </>
                 )}
               </button>

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { allContentTopics, allReelsScripts, allTactics, type ContentTopic, type ReelsScript } from "@/lib/contentData";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { CostBadge } from "@/components/CostBadge";
 
 const staticTopics = allContentTopics;
 const reelsScripts = allReelsScripts;
@@ -650,6 +651,7 @@ function GenerateTopicsModal({
               {hasDrafts
                 ? `Сгенерировать ещё ${count}`
                 : `Сгенерировать и добавить ${count}`}
+              <CostBadge action="topics" />
             </>
           )}
         </button>

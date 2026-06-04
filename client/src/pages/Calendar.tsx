@@ -15,6 +15,7 @@ import { allContentTopics } from "@/lib/contentData";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localCalendar, type ScheduledItem } from "@/lib/syncStorage";
+import { CostBadge } from "@/components/CostBadge";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
@@ -34,6 +35,11 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
   const [localItems, setLocalItems] = useState<ScheduledItem[]>([]);
   const [selected, setSelected] = useState<string>(fmtDate(today));
   const [picking, setPicking] = useState(false);
+  /* Модалка «своя публикация»: произвольный title + выбор формата
+     (Telegram-пост / Reels / Stories TG / Stories IG / Карусель и т.п.). */
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customTitle, setCustomTitle] = useState("");
+  const [customFormat, setCustomFormat] = useState<string>("Пост · Telegram");
 
   const cloudList = trpc.sync.scheduled.list.useQuery(undefined,
     { enabled: cloudEnabled && workspaceKey.length > 0 }
@@ -160,6 +166,26 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
       setLocalItems(localCalendar.load());
     }
     setPicking(false);
+  };
+
+  /* Сохранение произвольной публикации (не из библиотеки тем).
+     topicId не задаётся — пост не привязан к идее. */
+  const saveCustom = () => {
+    const title = customTitle.trim();
+    if (!title) return;
+    if (cloudEnabled) {
+      cloudSave.mutate({ date: selected, title, format: customFormat });
+    } else {
+      localCalendar.add({
+        id: crypto.randomUUID(),
+        date: selected,
+        title,
+        format: customFormat,
+      });
+      setLocalItems(localCalendar.load());
+    }
+    setCustomTitle("");
+    setCustomOpen(false);
   };
 
   const prevMonth = () => {
@@ -332,6 +358,7 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
                     <>
                       <Sparkles className="w-4 h-4" />
                       Заполнить {planForm.weeksCount * planForm.postsPerWeek} публикаций
+                      <CostBadge action="monthPlan" />
                     </>
                   )}
                 </button>
@@ -516,10 +543,38 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
               ))}
             </div>
 
-            <button onClick={() => setPicking((v) => !v)} className="btn-gold" style={{ width: "100%", justifyContent: "center" }}>
-              <Plus className="w-4 h-4" />
-              {picking ? "Закрыть" : "Добавить тему"}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setPicking((v) => !v)}
+                className="btn-gold"
+                style={{ flex: 1, justifyContent: "center" }}
+              >
+                <Plus className="w-4 h-4" />
+                {picking ? "Закрыть" : "Из идей"}
+              </button>
+              <button
+                onClick={() => setCustomOpen(true)}
+                title="Запланировать произвольный пост, Reels или Stories"
+                style={{
+                  flex: 1,
+                  background: "var(--ink-3)",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 9999,
+                  padding: "10px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Своя
+              </button>
+            </div>
 
             {picking && (
               <div className="scroll-thin" style={{ marginTop: 14, maxHeight: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -546,6 +601,18 @@ export default function Calendar({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
       </section>
+
+      {customOpen && (
+        <CustomPostModal
+          dateStr={selected}
+          title={customTitle}
+          format={customFormat}
+          onTitle={setCustomTitle}
+          onFormat={setCustomFormat}
+          onSave={saveCustom}
+          onClose={() => setCustomOpen(false)}
+        />
+      )}
     </>
   );
 
@@ -567,4 +634,212 @@ const planInputStyle: React.CSSProperties = {
   fontSize: 13,
   fontFamily: "var(--font-body)",
   width: "100%",
+};
+
+/* Модалка «Запланировать свой пост / Reels / Stories» — произвольная
+   тема + выбор формата. Не привязывается к topicId, не зовёт LLM,
+   просто кладёт запись в scheduled. */
+function CustomPostModal({
+  dateStr,
+  title,
+  format,
+  onTitle,
+  onFormat,
+  onSave,
+  onClose,
+}: {
+  dateStr: string;
+  title: string;
+  format: string;
+  onTitle: (v: string) => void;
+  onFormat: (v: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  /* Готовые форматы покрывают типичные сценарии. Юзер также может
+     вписать свой текст в свободном поле «Свой формат». */
+  const PRESETS = [
+    "Пост · Telegram",
+    "Пост · Instagram",
+    "Reels · Instagram",
+    "Reels · YouTube Shorts",
+    "Карусель · Instagram",
+    "Stories · Instagram",
+    "Stories · Telegram",
+    "Кружок · Telegram",
+    "Long-form · YouTube",
+  ];
+  const niceDate = new Date(dateStr).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    weekday: "short",
+  });
+
+  return (
+    <div
+      onClick={onClose}
+      role="dialog"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 60,
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bento-card"
+        style={{
+          width: "min(520px, 100%)",
+          padding: 28,
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <div className="eyebrow" style={{ color: "var(--brand-gold)" }}>
+          Своя публикация · {niceDate}
+        </div>
+        <h2
+          style={{
+            fontSize: 22,
+            margin: 0,
+            letterSpacing: "-0.4px",
+            color: "#fff",
+          }}
+        >
+          Запланировать пост вручную
+        </h2>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: "var(--brand-platinum)",
+          }}
+        >
+          Это не генерация — просто запись в календаре. Удобно, когда у
+          тебя уже есть готовая идея, сценарий или серия Stories.
+        </p>
+
+        <Field label="Тема или заголовок">
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => onTitle(e.target.value)}
+            placeholder="Например: серия Stories про утренний ритуал"
+            style={modalInputStyle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && title.trim()) onSave();
+            }}
+          />
+        </Field>
+
+        <Field label="Формат">
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+            }}
+          >
+            {PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => onFormat(p)}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 9999,
+                  border: 0,
+                  background:
+                    format === p ? "var(--brand-gold)" : "var(--ink-3)",
+                  color: format === p ? "var(--ink)" : "var(--brand-platinum)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <input
+            value={PRESETS.includes(format) ? "" : format}
+            onChange={(e) => onFormat(e.target.value)}
+            placeholder="…или свой формат"
+            style={{ ...modalInputStyle, marginTop: 8, fontSize: 12 }}
+          />
+        </Field>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1,
+              padding: "12px 18px",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "var(--brand-platinum)",
+              borderRadius: 9999,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Отмена
+          </button>
+          <button
+            onClick={onSave}
+            disabled={!title.trim()}
+            className="btn-gold"
+            style={{
+              flex: 1,
+              padding: "12px 18px",
+              fontSize: 13,
+              justifyContent: "center",
+              opacity: title.trim() ? 1 : 0.5,
+            }}
+          >
+            Запланировать
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 8, fontSize: 10 }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const modalInputStyle: React.CSSProperties = {
+  width: "100%",
+  height: 42,
+  padding: "0 14px",
+  background: "var(--ink-3)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 10,
+  color: "#fff",
+  fontSize: 14,
+  outline: "none",
+  fontFamily: "var(--font-body)",
 };

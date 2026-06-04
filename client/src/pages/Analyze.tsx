@@ -4,6 +4,7 @@ import { Microscope, Loader2, Link2, FileText, Sparkles } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { CostBadge } from "@/components/CostBadge";
 
 /* ============================================================
    /analyze — «Разбор чужого поста». Вставляешь ссылку (Telegram) или
@@ -175,6 +176,7 @@ export default function Analyze() {
               ) : (
                 <>
                   <Microscope className="w-4 h-4" /> Разобрать пост
+                  <CostBadge action="analyzePost" />
                 </>
               )}
             </button>
