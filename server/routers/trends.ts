@@ -338,33 +338,87 @@ const channelNameSchema = z
   .regex(/^[A-Za-z0-9_]+$/, "Только латиница, цифры и подчёркивания (имя без @ и https)");
 
 export const trendsRouter = router({
-  list: publicProcedure.query(async () => {
-    if (!isD1Configured()) return { topics: [], lastRefreshedAt: null };
-    const rows = await d1Query<{
-      id: string;
-      title: string;
-      summary: string;
-      why_viral: string;
-      source_channels: string;
-      examples_json: string;
-      fetched_at: number;
-    }>(
-      "SELECT id, title, summary, why_viral, source_channels, examples_json, fetched_at FROM trend_topics ORDER BY fetched_at DESC LIMIT 20",
-      [],
-    );
-    return {
-      topics: rows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        summary: r.summary,
-        whyViral: r.why_viral,
-        sourceChannels: r.source_channels ? r.source_channels.split(",") : [],
-        examples: JSON.parse(r.examples_json) as string[],
-        fetchedAt: r.fetched_at,
-      })),
-      lastRefreshedAt: rows[0]?.fetched_at ?? null,
-    };
-  }),
+  list: publicProcedure
+    .input(
+      z
+        .object({
+          /* Фильтр по периоду — сколько часов назад тренд был
+             зафиксирован. all = без ограничения. */
+          period: z.enum(["24h", "7d", "30d", "all"]).default("7d"),
+          /* Поиск по title и summary (LIKE без чувствительности к
+             регистру). */
+          search: z.string().trim().max(80).optional(),
+          /* Фильтр по конкретному каналу-источнику. source_channels
+             в БД — CSV-строка, ищем по LIKE с разделителями, чтобы не
+             ловить ложные срабатывания (channel внутри другого имени). */
+          sourceChannel: z.string().trim().max(64).optional(),
+          limit: z.number().int().min(1).max(60).default(20),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      if (!isD1Configured()) return { topics: [], lastRefreshedAt: null };
+      const period = input?.period ?? "7d";
+      const limit = input?.limit ?? 20;
+
+      const cond: string[] = [];
+      const args: (string | number)[] = [];
+
+      if (period !== "all") {
+        const hours = period === "24h" ? 24 : period === "30d" ? 24 * 30 : 24 * 7;
+        cond.push("fetched_at > ?");
+        args.push(Date.now() - hours * 60 * 60 * 1000);
+      }
+      if (input?.search) {
+        /* SQLite LOWER() не понимает Юникод — для кириллицы оставляем
+           case-sensitive LIKE. Достаточно для UX поиска. */
+        cond.push("(title LIKE ? OR summary LIKE ?)");
+        const q = `%${input.search}%`;
+        args.push(q, q);
+      }
+      if (input?.sourceChannel) {
+        /* source_channels хранится как «a,b,c». Чтобы не ловить
+           «a» внутри «aba», добавляем запятые с краёв на лету. */
+        cond.push("(',' || source_channels || ',') LIKE ?");
+        args.push(`%,${input.sourceChannel},%`);
+      }
+      args.push(limit);
+
+      const where = cond.length > 0 ? `WHERE ${cond.join(" AND ")}` : "";
+      const rows = await d1Query<{
+        id: string;
+        title: string;
+        summary: string;
+        why_viral: string;
+        source_channels: string;
+        examples_json: string;
+        fetched_at: number;
+      }>(
+        `SELECT id, title, summary, why_viral, source_channels, examples_json, fetched_at
+         FROM trend_topics ${where} ORDER BY fetched_at DESC LIMIT ?`,
+        args,
+      );
+
+      /* Для UI отдельно отдаём lastRefreshedAt без учёта фильтра
+         (когда вообще был последний рефреш). */
+      const lastRow = await d1Query<{ fetched_at: number }>(
+        "SELECT fetched_at FROM trend_topics ORDER BY fetched_at DESC LIMIT 1",
+        [],
+      );
+
+      return {
+        topics: rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          summary: r.summary,
+          whyViral: r.why_viral,
+          sourceChannels: r.source_channels ? r.source_channels.split(",") : [],
+          examples: JSON.parse(r.examples_json) as string[],
+          fetchedAt: r.fetched_at,
+        })),
+        lastRefreshedAt: lastRow[0]?.fetched_at ?? null,
+      };
+    }),
 
   refresh: publicProcedure
     .input(z.object({}).optional())

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeForUser } from "../_core/llm-guard";
 import { getPerformanceContextStats } from "../_core/performance";
+import { templateBlock } from "../_core/viral-templates";
+import { recordGeneration } from "../_core/generation-history";
 
 /* ============================================================
    Content Studio — Mr. Serbolin
@@ -118,6 +120,10 @@ export const contentRouter = router({
         platform: z.enum(["telegram", "instagram"]).default("telegram"),
         length: z.enum(["short", "medium", "long"]).default("medium"),
         rubric: z.enum(RUBRICS).default("general"),
+        /* Опциональный вирусный шаблон (P1.1). Если указан, в
+           system добавляется блок «жёстко следуй такой структуре».
+           Если шаблон неизвестен — игнорируем тихо. */
+        templateId: z.string().max(60).optional(),
       })
       )
       .mutation(async ({ input, ctx }) => {
@@ -129,11 +135,12 @@ export const contentRouter = router({
             : "350–500 слов";
 
       const rubricBlock = buildRubricBlock(input.rubric);
+      const tmplBlock = templateBlock(input.templateId);
       const system = `Текущая задача: ${formatBlock(input.tone)} пост для ${
         input.platform === "telegram" ? "Telegram" : "Instagram"
       }.
 ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по умолчанию — женщины 25–45 (если в теме явно не указан
-другой сегмент, например IT-предприниматель или мужчина 30+).`;
+другой сегмент, например IT-предприниматель или мужчина 30+).${tmplBlock}`;
 
       const user = `Напиши готовый пост на тему: «${input.title}».
 
@@ -152,15 +159,27 @@ ${rubricBlock ? rubricBlock + "\n" : ""}Сегмент аудитории по �
 промпта и убери все нарушения.`;
 
       const { text: post, model } = await invokeForUser(ctx.user, system, user);
-      return {
+      const result = {
         post,
         title: input.title,
         platform: input.platform,
         tone: input.tone,
         length: input.length,
         rubric: input.rubric,
+        templateId: input.templateId ?? null,
         model,
       };
+      /* В историю — для сравнения версий (P1.2). Не await'им —
+         запись истории не должна замедлять ответ юзеру. Workers
+         кладёт промис в ctx.waitUntil? У нас нет ctx env здесь, но
+         JSON.stringify+INSERT занимает <10ms, можно await. */
+      await recordGeneration({
+        userId: ctx.user.id,
+        kind: "post",
+        title: input.title,
+        payload: result,
+      });
+      return result;
     }),
 
   /* ---------- REELS SCRIPT ---------- */

@@ -17,12 +17,15 @@ import {
   BarChart3,
   ArrowRight,
   CalendarPlus,
+  Clock,
 } from "lucide-react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Streamdown } from "streamdown";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localLibrary, localCalendar, type Mode } from "@/lib/syncStorage";
+import { getTemplate } from "@/lib/viralTemplates";
+import HistoryDrawer from "@/components/HistoryDrawer";
 import { toast } from "sonner";
 
 /* 8 тонов — синхронизировано с TONES в server/routers/content.ts */
@@ -74,6 +77,21 @@ const useTitleFromQuery = (set: (t: string) => void) => {
   }, [location]);
 };
 
+/* Чтение templateId из ?templateId=... (приходит из /templates).
+   Возвращает текущий id и сеттер, чтобы Студия могла его сбросить
+   или сменить на лету. */
+const useTemplateFromQuery = (): [string | null, (v: string | null) => void] => {
+  const [location] = useLocation();
+  const [tid, setTid] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("templateId");
+    if (t) setTid(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+  return [tid, setTid];
+};
+
 export default function ContentGenerator() {
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState<Mode>("pack");
@@ -95,6 +113,8 @@ export default function ContentGenerator() {
   });
 
   useTitleFromQuery(setTitle);
+  const [templateId, setTemplateId] = useTemplateFromQuery();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const { workspaceKey, cloudEnabled } = useWorkspace();
   const cloudSave = trpc.sync.library.save.useMutation();
   const cloudSchedule = trpc.sync.scheduled.save.useMutation();
@@ -162,7 +182,14 @@ export default function ContentGenerator() {
     if (mode === "pack")
       await pack.mutateAsync({ title, platform, tone, rubric });
     else if (mode === "post")
-      await post.mutateAsync({ title, tone, platform, length, rubric });
+      await post.mutateAsync({
+        title,
+        tone,
+        platform,
+        length,
+        rubric,
+        ...(templateId ? { templateId } : {}),
+      });
     else if (mode === "reels")
       await reels.mutateAsync({ title, duration });
     else if (mode === "hooks")
@@ -286,6 +313,57 @@ export default function ContentGenerator() {
           )}
         </div>
       </section>
+
+      {/* Бейдж активного шаблона — показывается, если юзер пришёл из
+          /templates с ?templateId=... Доступен только для режима "post".
+          Иконка-крестик сбрасывает шаблон. */}
+      {templateId && (() => {
+        const t = getTemplate(templateId);
+        if (!t) return null;
+        return (
+          <section style={{ padding: "8px 0 0" }}>
+            <div className="container">
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 14px",
+                  background: "rgba(212,168,67,0.10)",
+                  border: "1px solid rgba(212,168,67,0.3)",
+                  borderRadius: 9999,
+                  fontSize: 12,
+                  color: "var(--brand-platinum)",
+                }}
+              >
+                <span style={{ color: "var(--brand-gold)", fontWeight: 700 }}>
+                  Шаблон:
+                </span>
+                <span style={{ color: "#fff", fontWeight: 600 }}>{t.title}</span>
+                <span style={{ opacity: 0.6, fontSize: 11 }}>
+                  {mode === "post" ? "применяется к посту" : "пока работает только для режима «Пост»"}
+                </span>
+                <button
+                  onClick={() => setTemplateId(null)}
+                  title="Снять шаблон"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: "var(--muted-foreground)",
+                    cursor: "pointer",
+                    padding: 0,
+                    marginLeft: 4,
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       <section style={{ padding: "24px 0" }}>
         <div className="container">
@@ -450,6 +528,26 @@ export default function ContentGenerator() {
                     <Sparkles className="w-4 h-4" /> Сгенерировать
                   </>
                 )}
+              </button>
+              <button
+                onClick={() => setHistoryOpen(true)}
+                title="Прошлые попытки и сравнение версий"
+                style={{
+                  padding: "14px 22px",
+                  background: "var(--ink-2)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  color: "var(--brand-platinum)",
+                  borderRadius: 9999,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Clock className="w-4 h-4" />
+                История
               </button>
               <button
                 onClick={handleSaveToLibrary}
@@ -1095,6 +1193,28 @@ export default function ContentGenerator() {
           </div>
         </div>
       </section>
+
+      <HistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        currentTitle={title}
+        currentText={
+          mode === "post"
+            ? refinedOverrides.post ?? post.data?.post ?? ""
+            : ""
+        }
+        onPickPayload={(p) => {
+          /* Подставляем выбранную версию в refinedOverrides — это
+             уже используемый механизм inline-редактора, рендерит
+             текст вместо исходного post.data. */
+          const text = (p as { post?: string }).post;
+          if (typeof text === "string" && text.length > 0) {
+            setRefinedOverrides((s) => ({ ...s, post: text }));
+            setHistoryOpen(false);
+            toast.success("Версия подставлена. Можно редактировать дальше.");
+          }
+        }}
+      />
     </div>
   );
 }

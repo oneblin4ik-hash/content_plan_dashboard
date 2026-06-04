@@ -13,6 +13,7 @@ import { voiceRouter } from "../server/routers/voice";
 import { adminRouter } from "../server/routers/admin";
 import { assistantRouter } from "../server/routers/assistant";
 import { analyzeRouter } from "../server/routers/analyze";
+import { historyRouter } from "../server/routers/history";
 
 export const appRouter = router({
   system: systemRouter,
@@ -29,6 +30,7 @@ export const appRouter = router({
   admin: adminRouter,
   assistant: assistantRouter,
   analyze: analyzeRouter,
+  history: historyRouter,
 });
 
 export type AppRouter = typeof appRouter;

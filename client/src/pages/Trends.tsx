@@ -31,7 +31,17 @@ function statusLabel(status: string): string {
 
 export default function Trends() {
   const [, navigate] = useLocation();
-  const list = trpc.trends.list.useQuery();
+  /* Расширенные фильтры (P1.3): период, поиск по тексту, канал-источник.
+     Дефолт period=7d — самые свежие. */
+  const [period, setPeriod] = useState<"24h" | "7d" | "30d" | "all">("7d");
+  const [search, setSearch] = useState("");
+  const [sourceChannel, setSourceChannel] = useState<string>("");
+  const list = trpc.trends.list.useQuery({
+    period,
+    search: search.trim() || undefined,
+    sourceChannel: sourceChannel || undefined,
+    limit: 30,
+  });
   const channels = trpc.trends.channels.useQuery();
   const refresh = trpc.trends.refresh.useMutation({
     onSuccess: (res) => {
@@ -191,11 +201,127 @@ export default function Trends() {
             </div>
           )}
 
+          {/* Фильтры (P1.3) */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 16,
+            }}
+          >
+            {/* Период */}
+            <div
+              style={{
+                display: "inline-flex",
+                gap: 2,
+                padding: 3,
+                background: "var(--ink-2)",
+                borderRadius: 9999,
+              }}
+            >
+              {(
+                [
+                  ["24h", "24 часа"],
+                  ["7d", "Неделя"],
+                  ["30d", "Месяц"],
+                  ["all", "Всё"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setPeriod(k)}
+                  style={{
+                    padding: "6px 12px",
+                    border: 0,
+                    background:
+                      period === k ? "var(--brand-gold)" : "transparent",
+                    color: period === k ? "var(--ink)" : "var(--brand-platinum)",
+                    borderRadius: 9999,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Поиск */}
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по теме..."
+              style={{
+                flex: "1 1 200px",
+                height: 36,
+                padding: "0 14px",
+                background: "var(--ink-2)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 9999,
+                color: "#fff",
+                fontSize: 13,
+                outline: "none",
+              }}
+            />
+
+            {/* Канал-источник */}
+            <select
+              value={sourceChannel}
+              onChange={(e) => setSourceChannel(e.target.value)}
+              style={{
+                height: 36,
+                padding: "0 12px",
+                background: "var(--ink-2)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 9999,
+                color: "#fff",
+                fontSize: 13,
+                cursor: "pointer",
+                minWidth: 160,
+              }}
+            >
+              <option value="" style={{ background: "#222" }}>
+                Все каналы
+              </option>
+              {chs
+                .filter((c) => c.enabled)
+                .map((c) => (
+                  <option key={c.name} value={c.name} style={{ background: "#222" }}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+
+            {(search || sourceChannel || period !== "7d") && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setSourceChannel("");
+                  setPeriod("7d");
+                }}
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  color: "var(--muted-foreground)",
+                  fontSize: 12,
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                Сбросить
+              </button>
+            )}
+          </div>
+
           {list.data && list.data.topics.length === 0 && (
             <div className="bento-card" style={{ padding: 24 }}>
               <div className="text-platinum" style={{ fontSize: 14 }}>
-                Пока пусто. Нажми «Обновить сейчас» — Worker сходит за
-                свежими постами и кластеризует темы.
+                {search || sourceChannel || period !== "all"
+                  ? "По текущим фильтрам ничего не нашлось. Попробуй расширить период или сбросить фильтры."
+                  : "Пока пусто. Нажми «Обновить сейчас» — Worker сходит за свежими постами и кластеризует темы."}
               </div>
             </div>
           )}

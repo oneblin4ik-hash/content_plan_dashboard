@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import Assistant from "./pages/Assistant";
 import Analyze from "./pages/Analyze";
+import Templates from "./pages/Templates";
 import Analytics from "./pages/Analytics";
 import ContentGenerator from "./pages/ContentGenerator";
 import Carousel from "./pages/Carousel";
@@ -103,6 +104,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/assistant" component={Assistant} />
       <Route path="/analyze" component={Analyze} />
+      <Route path="/templates" component={Templates} />
       <Route path="/generator" component={ContentGenerator} />
       <Route path="/carousel" component={Carousel} />
       <Route path="/voice" component={Voice} />

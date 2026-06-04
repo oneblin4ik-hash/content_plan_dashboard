@@ -14,6 +14,7 @@ import {
   Crown,
   MessageSquare,
   Microscope,
+  Bookmark,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +37,7 @@ type Item = { href: string; label: string; icon: LucideIcon };
 
 const primary: Item[] = [
   { href: "/dashboard", label: "Идеи", icon: BookOpen },
+  { href: "/templates", label: "Шаблоны", icon: Bookmark },
   { href: "/assistant", label: "Помощник", icon: MessageSquare },
   { href: "/generator", label: "Студия", icon: Sparkles },
   { href: "/carousel", label: "Карусели", icon: Layers },
