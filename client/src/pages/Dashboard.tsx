@@ -21,6 +21,7 @@ import { allContentTopics, allReelsScripts, allTactics, type ContentTopic, type 
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { CostBadge } from "@/components/CostBadge";
+import { restartOnboardingTour } from "@/components/OnboardingTour";
 
 const staticTopics = allContentTopics;
 const reelsScripts = allReelsScripts;
@@ -205,6 +206,32 @@ export default function Dashboard() {
             Выбери тему — и одним кликом отправь её в Студию. Или сгенерируй
             новые под свою аудиторию.
           </p>
+          {/* «Показать обучение» — запускает многошаговый тур по разделам.
+              Кнопка в виде ghost-pill: не отвлекает от основного экрана,
+              но первая видна тем, кто хочет освежить инструкцию. */}
+          <button
+            onClick={restartOnboardingTour}
+            style={{
+              marginTop: 16,
+              padding: "8px 16px",
+              borderRadius: 9999,
+              background: "rgba(212,168,67,0.08)",
+              border: "1px solid rgba(212,168,67,0.28)",
+              color: "var(--brand-gold)",
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+            title="Пройти мини-гид по сервису заново"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Показать обучение
+          </button>
         </div>
       </section>
 

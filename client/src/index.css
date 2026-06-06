@@ -431,3 +431,14 @@ input, textarea, select {
   background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;
   font-size: 13px;
 }
+
+/* Onboarding-тур: slide-in анимация контента карточки при смене шага.
+   Fade + лёгкое подскальзывание снизу + минимальный масштаб → даёт
+   ощущение глубины перехода без громоздкого framework. */
+@keyframes tour-step-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.97); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.tour-step-in {
+  animation: tour-step-in 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
