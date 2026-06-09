@@ -286,7 +286,7 @@ function Hero() {
           <span style={{ opacity: 0.4 }}>·</span>
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
             <Zap className="w-3.5 h-3.5" />
-            1 000 токенов в подарок
+            2 000 токенов в подарок
           </span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -1106,8 +1106,8 @@ function FinalCTA() {
             margin: "0 auto 32px",
           }}
         >
-          3 дня бесплатно, 1 000 токенов в подарок — ≈ 8 публикаций или
-          5 публикаций + анализ конкурента. Без карты. Без обязательств.
+          3 дня бесплатно, 2 000 токенов в подарок — ≈ 16 публикаций или
+          10 публикаций + пара анализов конкурентов. Без карты. Без обязательств.
         </p>
         <Link href={cta.href}>
           <span
