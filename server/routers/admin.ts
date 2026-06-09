@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute } from "../_core/d1";
+import { sendEmail, buildPasswordResetEmail } from "../_core/email";
 
 /* ============================================================
    Admin router. Доступ — только email'ы из env-секрета
@@ -174,4 +175,23 @@ export const adminRouter = router({
       tokensUsedTotal: Number(r.tokens_used) || 0,
     };
   }),
+
+  /* Диагностика почты: пробует отправить тестовое password-reset-
+     письмо на указанный адрес через Resend, возвращает реальный
+     ответ провайдера. Нужно, чтобы понять, доходят ли письма и
+     если нет — какая именно ошибка (sandbox-restriction, не
+     верифицирован домен FROM и т.п.). */
+  testEmail: adminProcedure
+    .input(
+      z.object({
+        to: z.string().email(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const url = "https://example.com/reset-password?token=test-diagnostic";
+      const r = await sendEmail(
+        buildPasswordResetEmail({ email: input.to, url }),
+      );
+      return r;
+    }),
 });

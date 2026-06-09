@@ -156,6 +156,15 @@ export default function Admin() {
           )}
         </div>
       </section>
+
+      {/* Диагностика почты — проверка, что Resend реально доставляет
+          письма (sandbox-режим отдаёт 200, но молча роняет на чужие
+          адреса; верифицированный домен — доставляет всем). */}
+      <section style={{ padding: "0 0 96px" }}>
+        <div className="container" style={{ maxWidth: 1180 }}>
+          <EmailDiagnostics />
+        </div>
+      </section>
     </div>
   );
 }
@@ -415,3 +424,95 @@ const iconBtnStyle: React.CSSProperties = {
   color: "var(--brand-platinum)",
   cursor: "pointer",
 };
+
+/* Карточка диагностики почты: вводишь email → жмёшь «Отправить тест»
+   → ниже выводится сырой ответ Resend (id успешного письма или
+   ошибка с кодом). Помогает определить корень проблем с verification /
+   reset-password письмами. */
+function EmailDiagnostics() {
+  const [to, setTo] = useState("");
+  const [result, setResult] = useState<unknown>(null);
+  const test = trpc.admin.testEmail.useMutation({
+    onSuccess: (r) => setResult(r),
+    onError: (e) => setResult({ ok: false, error: e.message }),
+  });
+
+  return (
+    <div className="bento-card" style={{ padding: 24 }}>
+      <div className="eyebrow" style={{ marginBottom: 12, color: "var(--brand-gold)" }}>
+        Диагностика почты
+      </div>
+      <h3
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: "#fff",
+          margin: "0 0 12px",
+          letterSpacing: "-0.2px",
+        }}
+      >
+        Проверка отправки через Resend
+      </h3>
+      <p
+        className="text-platinum"
+        style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}
+      >
+        Отправит копию password-reset-письма на указанный адрес.
+        Покажет реальный ответ Resend (id если успех, или текст ошибки).
+        Если без верификации домена — sandbox принимает только email
+        владельца Resend-аккаунта; на остальные молча роняет.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          type="email"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="кому отправить (email)"
+          style={{
+            flex: "1 1 240px",
+            height: 40,
+            padding: "0 14px",
+            background: "var(--ink-3)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 9999,
+            fontSize: 14,
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={() => {
+            if (!to.trim()) return;
+            setResult(null);
+            test.mutate({ to: to.trim() });
+          }}
+          disabled={!to.trim() || test.isPending}
+          className="btn-gold"
+          style={{ padding: "10px 18px", fontSize: 13 }}
+        >
+          {test.isPending ? "Отправляю..." : "Отправить тест"}
+        </button>
+      </div>
+
+      {result != null && (
+        <pre
+          style={{
+            marginTop: 14,
+            padding: 14,
+            background: "var(--ink-3)",
+            borderRadius: 10,
+            fontFamily: "var(--font-body)",
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: "pre-wrap",
+            color: (result as any).ok ? "#3ecf8e" : "#f87171",
+            border: `1px solid ${(result as any).ok ? "rgba(62,207,142,0.3)" : "rgba(248,113,113,0.3)"}`,
+          }}
+        >
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}

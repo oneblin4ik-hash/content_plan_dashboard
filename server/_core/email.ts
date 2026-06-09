@@ -75,9 +75,12 @@ export async function sendEmail(req: EmailRequest): Promise<EmailResult> {
       }),
     });
     if (!r.ok) {
+      /* Полный body ошибки — Resend кладёт сюда {name,message} с
+         объяснением: invalid_from_address, validation_error,
+         restricted_api_key, you_can_only_send_to и т.п. */
       const errText = await r.text().catch(() => "");
       console.error(`[email] resend HTTP ${r.status}: ${errText}`);
-      return { ok: false, error: `Resend: ${r.status}` };
+      return { ok: false, error: `Resend ${r.status}: ${errText.slice(0, 300)}` };
     }
     const data = (await r.json()) as { id?: string };
     return { ok: true, provider: "resend", id: data.id ?? "" };

@@ -96,7 +96,11 @@ async function dispatchVerification(userId: string, email: string) {
   const url = `${getAppUrl()}/verify-email?token=${token}`;
   const r = await sendEmail(buildVerificationEmail({ email, url }));
   if (!r.ok) {
-    console.error(`[auth] не удалось отправить verification на ${email}:`, r.error);
+    console.error(
+      `[auth] не удалось отправить verification на ${email}: ${r.error} · fallback URL: ${url}`,
+    );
+  } else {
+    console.log(`[auth] verification отправлен на ${email}`);
   }
 }
 
@@ -110,7 +114,14 @@ async function dispatchPasswordReset(userId: string, email: string) {
   const url = `${getAppUrl()}/reset-password?token=${token}`;
   const r = await sendEmail(buildPasswordResetEmail({ email, url }));
   if (!r.ok) {
-    console.error(`[auth] не удалось отправить reset на ${email}:`, r.error);
+    /* Логируем и url, и ошибку — чтобы из wrangler tail можно было
+       вручную взять ссылку для пользователя, пока домен в Resend
+       не верифицирован. Ссылка действует 1 час. */
+    console.error(
+      `[auth] не удалось отправить reset на ${email}: ${r.error} · fallback URL: ${url}`,
+    );
+  } else {
+    console.log(`[auth] reset отправлен на ${email}`);
   }
 }
 
