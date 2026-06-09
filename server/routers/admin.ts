@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
 import { d1Query, d1Execute } from "../_core/d1";
-import { sendEmail, buildPasswordResetEmail } from "../_core/email";
+import { sendEmail, buildPasswordResetEmail, getAppUrl } from "../_core/email";
 
 /* ============================================================
    Admin router. Доступ — только email'ы из env-секрета
@@ -194,4 +194,67 @@ export const adminRouter = router({
       );
       return r;
     }),
+
+  /* Активные ссылки восстановления и подтверждения — нужны админу,
+     чтобы отдать рукой, пока в Resend не верифицирован домен и
+     письма не доходят до mail.ru / yandex / etc. */
+  pendingLinks: adminProcedure.query(async () => {
+    const now = Date.now();
+    const rows = await d1Query<{
+      email: string;
+      verify_token: string | null;
+      verify_exp: number | null;
+      reset_token: string | null;
+      reset_exp: number | null;
+      email_verified_at: number | null;
+    }>(
+      `SELECT email,
+              email_verification_token AS verify_token,
+              email_verification_expires_at AS verify_exp,
+              password_reset_token AS reset_token,
+              password_reset_expires_at AS reset_exp,
+              email_verified_at
+         FROM users
+        WHERE (email_verification_token IS NOT NULL
+                 AND email_verification_expires_at > ?)
+           OR (password_reset_token IS NOT NULL
+                 AND password_reset_expires_at > ?)
+        ORDER BY COALESCE(reset_exp, verify_exp) DESC
+        LIMIT 100`,
+      [now, now],
+    );
+    const base = getAppUrl();
+    return rows.flatMap((r) => {
+      const out: Array<{
+        kind: "verify" | "reset";
+        email: string;
+        url: string;
+        expiresAt: number;
+      }> = [];
+      if (r.reset_token && r.reset_exp && r.reset_exp > now) {
+        out.push({
+          kind: "reset",
+          email: r.email,
+          url: `${base}/reset-password?token=${r.reset_token}`,
+          expiresAt: r.reset_exp,
+        });
+      }
+      /* Подтверждение показываем только если юзер ещё не verified —
+         иначе токен висит как мусор. */
+      if (
+        !r.email_verified_at &&
+        r.verify_token &&
+        r.verify_exp &&
+        r.verify_exp > now
+      ) {
+        out.push({
+          kind: "verify",
+          email: r.email,
+          url: `${base}/verify-email?token=${r.verify_token}`,
+          expiresAt: r.verify_exp,
+        });
+      }
+      return out;
+    });
+  }),
 });

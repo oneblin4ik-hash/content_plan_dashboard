@@ -157,6 +157,14 @@ export default function Admin() {
         </div>
       </section>
 
+      {/* Активные verify / reset ссылки — обход sandbox-Resend:
+          копируешь ссылку, отдаёшь юзеру через любой канал. */}
+      <section style={{ padding: "0 0 32px" }}>
+        <div className="container" style={{ maxWidth: 1180 }}>
+          <PendingLinks />
+        </div>
+      </section>
+
       {/* Диагностика почты — проверка, что Resend реально доставляет
           письма (sandbox-режим отдаёт 200, но молча роняет на чужие
           адреса; верифицированный домен — доставляет всем). */}
@@ -512,6 +520,152 @@ function EmailDiagnostics() {
         >
           {JSON.stringify(result, null, 2)}
         </pre>
+      )}
+    </div>
+  );
+}
+
+/* Активные verify/reset ссылки — список юзеров, у которых сейчас есть
+   действующий токен. Можно скопировать ссылку одним кликом и отдать
+   юзеру через mail/telegram/whatsapp. Нужно, пока в Resend не
+   верифицирован домен и mail.ru/yandex/etc не получают письма. */
+function PendingLinks() {
+  const q = trpc.admin.pendingLinks.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const items = q.data ?? [];
+
+  return (
+    <div className="bento-card" style={{ padding: 24 }}>
+      <div className="eyebrow" style={{ marginBottom: 12, color: "var(--brand-gold)" }}>
+        Активные ссылки
+      </div>
+      <h3
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: "#fff",
+          margin: "0 0 8px",
+          letterSpacing: "-0.2px",
+        }}
+      >
+        Reset & verify токены (обход, пока нет своего домена)
+      </h3>
+      <p
+        className="text-platinum"
+        style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}
+      >
+        Пока в Resend стоит sandbox-домен onboarding@resend.dev, письма
+        уходят только на твой email. Здесь — действующие ссылки всех
+        юзеров. Скопируй и отдай вручную через любой канал. Список
+        обновляется автоматически каждые 30 секунд.
+      </p>
+
+      {q.isLoading ? (
+        <div className="text-platinum" style={{ fontSize: 13 }}>
+          <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+          Загружаю...
+        </div>
+      ) : items.length === 0 ? (
+        <div
+          style={{
+            padding: 16,
+            background: "var(--ink-3)",
+            borderRadius: 10,
+            fontSize: 13,
+            color: "var(--muted-foreground)",
+          }}
+        >
+          Активных ссылок нет. Они появятся здесь автоматически, как
+          только кто-то зарегистрируется или нажмёт «Забыл пароль».
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {items.map((it, idx) => {
+            const minLeft = Math.max(
+              0,
+              Math.round((it.expiresAt - Date.now()) / 60000),
+            );
+            const key = it.url + "/" + idx;
+            const isCopied = copied === key;
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  background: "var(--ink-3)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 10,
+                }}
+              >
+                <span
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    background:
+                      it.kind === "reset"
+                        ? "rgba(212,168,67,0.18)"
+                        : "rgba(62,207,142,0.18)",
+                    color:
+                      it.kind === "reset" ? "var(--brand-gold)" : "#3ecf8e",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {it.kind === "reset" ? "Reset" : "Verify"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "#fff",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {it.email}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--muted-foreground)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  истекает через {minLeft} мин
+                </span>
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(it.url);
+                    setCopied(key);
+                    toast.success("Ссылка скопирована");
+                    setTimeout(() => setCopied(null), 2000);
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    background: "var(--brand-gold)",
+                    color: "var(--ink)",
+                    border: 0,
+                    borderRadius: 9999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {isCopied ? "Скопировано" : "Скопировать"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

@@ -39,6 +39,34 @@ export default function ForgotPassword() {
           <CheckCircle2 className="w-5 h-5" />
           Письмо в пути
         </div>
+        <div
+          style={{
+            padding: 14,
+            background: "var(--ink-3)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 10,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: "var(--brand-platinum)",
+            marginBottom: 16,
+          }}
+        >
+          Проверь папку{" "}
+          <span style={{ color: "#fff", fontWeight: 600 }}>Спам</span> и{" "}
+          <span style={{ color: "#fff", fontWeight: 600 }}>Рассылки/Promotions</span>{" "}
+          — особенно если у тебя @mail.ru или @yandex.ru. Если за 5 минут ничего
+          не пришло — напиши на{" "}
+          <a
+            href="mailto:one.blin4ik@gmail.com?subject=Восстановление%20пароля"
+            style={{
+              color: "var(--brand-gold)",
+              textDecoration: "underline",
+            }}
+          >
+            one.blin4ik@gmail.com
+          </a>{" "}
+          и я пришлю ссылку вручную.
+        </div>
         <Link href="/signin">
           <span
             style={{

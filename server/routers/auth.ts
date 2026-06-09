@@ -15,6 +15,7 @@ import {
   buildPasswordResetEmail,
   getAppUrl,
 } from "../_core/email";
+import { notifyOwnerOnEmailFail } from "../_core/owner-notify";
 
 /* ============================================================
    Auth router: регистрация / логин / выход / профиль.
@@ -99,6 +100,14 @@ async function dispatchVerification(userId: string, email: string) {
     console.error(
       `[auth] не удалось отправить verification на ${email}: ${r.error} · fallback URL: ${url}`,
     );
+    /* Fallback на период sandbox-Resend: уведомление владельцу в
+       Telegram, чтобы он отдал ссылку юзеру вручную. */
+    await notifyOwnerOnEmailFail({
+      kind: "verify",
+      toEmail: email,
+      url,
+      resendError: r.error ?? "",
+    });
   } else {
     console.log(`[auth] verification отправлен на ${email}`);
   }
@@ -120,6 +129,12 @@ async function dispatchPasswordReset(userId: string, email: string) {
     console.error(
       `[auth] не удалось отправить reset на ${email}: ${r.error} · fallback URL: ${url}`,
     );
+    await notifyOwnerOnEmailFail({
+      kind: "reset",
+      toEmail: email,
+      url,
+      resendError: r.error ?? "",
+    });
   } else {
     console.log(`[auth] reset отправлен на ${email}`);
   }
