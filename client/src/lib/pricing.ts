@@ -22,7 +22,9 @@ export type LlmActionId =
   | "analyzeChannel" // AI-отчёт по конкуренту
   | "insights"      // AI-инсайты по метрикам
   | "assistant"     // 1 ответ контент-помощника
-  | "refine";       // правка готового текста по инструкции
+  | "refine"        // правка готового текста по инструкции
+  | "splitToSlides" // разбить готовый пост на слайды карусели
+  | "refineSlide";  // AI-правка одного слайда карусели
 
 type Action = {
   cost: number;
@@ -45,6 +47,8 @@ export const LLM_ACTIONS: Record<LlmActionId, Action> = {
   insights:       { cost: 150, label: "AI-инсайты",      desc: "Разбор твоей статистики и что менять" },
   assistant:      { cost: 80,  label: "Ответ помощника", desc: "Один ответ контент-стратега" },
   refine:         { cost: 60,  label: "Правка",          desc: "Точечная переписка готового текста" },
+  splitToSlides:  { cost: 350, label: "Пост → карусель", desc: "Разбить готовый пост на слайды без пересказа" },
+  refineSlide:    { cost: 150, label: "Правка слайда",   desc: "AI-правка одного слайда: переписать / сократить / усилить" },
 };
 
 export function costOf(id: LlmActionId): number {

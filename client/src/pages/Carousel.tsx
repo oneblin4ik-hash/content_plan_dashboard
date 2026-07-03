@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
 import {
@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { localLibrary, localCalendar } from "@/lib/syncStorage";
+import { CostBadge } from "@/components/CostBadge";
 
 /* ============================================================
    Конструктор каруселей для Instagram (вдохновлён Virale / chatplace).
@@ -35,9 +36,16 @@ import { localLibrary, localCalendar } from "@/lib/syncStorage";
    ============================================================ */
 
 type SlideKind = "cover" | "content" | "cta";
+/* Layout контент-слайда (этап 5):
+   - default: headline + body (как было)
+   - quote: крупная цитата с декоративными кавычками, body = подпись
+   - list: headline + маркированный список (body построчно)
+   - bignumber: огромная цифра/факт (headline) + подпись (body) */
+type SlideLayout = "default" | "quote" | "list" | "bignumber";
 type Slide = {
   id: string;
   kind: SlideKind;
+  layout?: SlideLayout;
   headline: string;
   body: string;
   /* Фоновое фото. Храним dataURL (data:image/...;base64,...) —
@@ -275,14 +283,26 @@ export default function Carousel() {
 
   const [themeId, setThemeId] = useState("ink_gold");
   const [accent, setAccent] = useState<string | null>(null);
-  const [handle, setHandle] = useState("@serbolin");
+  const [handle, setHandle] = useState("");
   const [showPages, setShowPages] = useState(true);
   const [showHandle, setShowHandle] = useState(true);
+  /* Брендинг-плашка автора (этап 1): имя + круглый аватар (dataURL).
+     Дефолт имени подтягиваем из voice-профиля юзера, аватар грузится
+     файлом как фоновые фото. */
+  const [authorName, setAuthorName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  /* Swipe-хинт на обложке (этап 2) + текст CTA-кнопки на последнем
+     слайде. ctaText пустой = fallback на handle. */
+  const [showSwipeHint, setShowSwipeHint] = useState(true);
+  const [swipeText, setSwipeText] = useState("Листай");
+  const [ctaText, setCtaText] = useState("");
   const [ratio, setRatio] = useState<Ratio>("4:5");
   const [fontId, setFontId] = useState("grotesk");
   const [align, setAlign] = useState<Align>("left");
   const [panel, setPanel] = useState<"slide" | "design">("slide");
   const [exporting, setExporting] = useState(false);
+  /* Индекс миниатюры, над которой висит перетаскиваемый слайд (DnD). */
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [planDate, setPlanDate] = useState(() => {
     const t = new Date();
@@ -304,9 +324,50 @@ export default function Carousel() {
   );
   const dims = RATIO_DIMS[ratio];
 
+  /* Режим генерации: по теме (AI пишет с нуля) или из готового текста
+     (разбивка поста на слайды без пересказа). */
+  const [genMode, setGenMode] = useState<"topic" | "text">("topic");
+  const [sourceText, setSourceText] = useState("");
+
   const generate = trpc.content.generateCarouselSlides.useMutation();
+  const split = trpc.content.splitToSlides.useMutation();
   const cloudSave = trpc.sync.library.save.useMutation();
   const cloudSchedule = trpc.sync.scheduled.save.useMutation();
+
+  /* Приём текста из Студии: кнопка «В карусель» кладёт пост в
+     sessionStorage → здесь подхватываем, переключаемся в режим
+     «из текста» и чистим ключ, чтобы не сработало повторно. */
+  useEffect(() => {
+    const incoming = sessionStorage.getItem("cs.carousel_source_text");
+    if (incoming) {
+      sessionStorage.removeItem("cs.carousel_source_text");
+      setSourceText(incoming);
+      setGenMode("text");
+      const t = sessionStorage.getItem("cs.carousel_source_title");
+      if (t) {
+        setTitle(t);
+        sessionStorage.removeItem("cs.carousel_source_title");
+      }
+    }
+  }, []);
+
+  /* Дефолты брендинга из voice-профиля: имя автора и стандартный CTA.
+     Заполняем только пустые поля, чтобы не перетирать ручной ввод. */
+  const voice = trpc.voice.get.useQuery(undefined, {
+    enabled: cloudEnabled,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    const v = voice.data;
+    if (!v) return;
+    if (v.personaName) {
+      setAuthorName((cur) => cur || v.personaName!);
+      setHandle((cur) =>
+        cur || "@" + v.personaName!.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "_"),
+      );
+    }
+    if (v.defaultCta) setCtaText((cur) => cur || v.defaultCta!);
+  }, [voice.data]);
 
   /* Скрытые full-size ноды для экспорта (1080px), по одной на слайд. */
   const exportRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -326,6 +387,7 @@ export default function Carousel() {
         res.slides.map((s) => ({
           id: uid(),
           kind: s.kind as SlideKind,
+          layout: (s as { layout?: string }).layout as SlideLayout | undefined,
           headline: s.headline,
           body: s.body,
         })),
@@ -334,6 +396,37 @@ export default function Carousel() {
       toast.success(`Готово: ${res.slides.length} слайдов`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Не удалось сгенерировать");
+    }
+  };
+
+  /* Режим «из готового текста»: разбивка поста на слайды с сохранением
+     формулировок автора (server: content.splitToSlides). */
+  const handleSplit = async () => {
+    if (sourceText.trim().length < 80) {
+      toast.error("Вставь текст поста (минимум пара абзацев)");
+      return;
+    }
+    try {
+      const res = await split.mutateAsync({
+        text: sourceText.trim(),
+        slides: count,
+      });
+      setSlides(
+        res.slides.map((s) => ({
+          id: uid(),
+          kind: s.kind as SlideKind,
+          layout: (s as { layout?: string }).layout as SlideLayout | undefined,
+          headline: s.headline,
+          body: s.body,
+        })),
+      );
+      setSelected(0);
+      if (!title.trim()) {
+        setTitle(res.slides[0]?.headline.slice(0, 80) ?? "Карусель");
+      }
+      toast.success(`Разбито на ${res.slides.length} слайдов`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Не удалось разбить текст");
     }
   };
 
@@ -440,6 +533,40 @@ export default function Carousel() {
     }
   };
 
+  /* PDF: все слайды одним файлом — формат, который просят для
+     LinkedIn-каруселей (там документ, не картинки). jsPDF грузим
+     динамически, чтобы не тащить ~350kb в основной бандл тем, кто
+     PDF не пользуется. */
+  const exportPdf = async () => {
+    if (slides.length === 0) return;
+    setExporting(true);
+    try {
+      await document.fonts.ready;
+      const { jsPDF } = await import("jspdf");
+      /* Размер страницы = пиксели слайда в pt (1px ≈ 0.75pt — не
+         важно для цифрового PDF, важна пропорция). */
+      const pdf = new jsPDF({
+        orientation: dims.h >= dims.w ? "portrait" : "landscape",
+        unit: "px",
+        format: [dims.w, dims.h],
+        compress: true,
+      });
+      for (let i = 0; i < slides.length; i++) {
+        const node = exportRefs.current[i];
+        if (!node) continue;
+        const dataUrl = await toPng(node, { pixelRatio: 1, cacheBust: true });
+        if (i > 0) pdf.addPage([dims.w, dims.h]);
+        pdf.addImage(dataUrl, "PNG", 0, 0, dims.w, dims.h);
+      }
+      pdf.save(`${slugTitle}-carousel.pdf`);
+      toast.success("PDF готов");
+    } catch {
+      toast.error("Не удалось собрать PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const saveToLibrary = async () => {
     const payload = {
       title,
@@ -453,6 +580,14 @@ export default function Carousel() {
         ratio,
         fontId,
         align,
+        /* Брендинг + swipe (этапы 1-2). Старые сохранёнки без этих
+           полей продолжают открываться — undefined отработают
+           дефолтами при восстановлении. */
+        authorName,
+        avatarUrl,
+        showSwipeHint,
+        swipeText,
+        ctaText,
       },
     };
     if (cloudEnabled && workspaceKey) {
@@ -525,47 +660,134 @@ export default function Carousel() {
             выбери оформление и скачай готовые картинки для Instagram.
           </p>
 
-          {/* Панель генерации */}
+          {/* Панель генерации: два режима — «по теме» (AI пишет с нуля)
+              и «из готового текста» (разбивка поста на слайды). */}
           <div
             className="bento-card"
             style={{ padding: 18, display: "grid", gap: 14 }}
           >
-            <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                placeholder="Тема карусели, напр. «3 ошибки на сушке»"
-                style={{
-                  flex: 1,
-                  minWidth: 240,
-                  background: "var(--ink-3)",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 12,
-                  padding: "12px 16px",
-                  fontSize: 15,
-                  fontFamily: "var(--font-body)",
-                }}
-              />
-              <button
-                onClick={handleGenerate}
-                disabled={generate.isPending}
-                className="btn-gold gold-glow"
-                style={{ padding: "12px 24px", fontSize: 15 }}
-              >
-                {generate.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Собираю...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />{" "}
-                    {hasSlides ? "Пересобрать" : "Сгенерировать"}
-                  </>
-                )}
-              </button>
+            <div
+              style={{
+                display: "inline-flex",
+                gap: 4,
+                padding: 4,
+                background: "var(--ink-3)",
+                borderRadius: 9999,
+                justifySelf: "start",
+              }}
+            >
+              {(
+                [
+                  ["topic", "По теме"],
+                  ["text", "Из готового текста"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setGenMode(k)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 9999,
+                    border: 0,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    background:
+                      genMode === k ? "var(--brand-gold)" : "transparent",
+                    color: genMode === k ? "var(--ink)" : "var(--brand-platinum)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+
+            {genMode === "topic" ? (
+              <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+                  placeholder="Тема карусели, напр. «3 ошибки на сушке»"
+                  style={{
+                    flex: 1,
+                    minWidth: 240,
+                    background: "var(--ink-3)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    fontSize: 15,
+                    fontFamily: "var(--font-body)",
+                  }}
+                />
+                <button
+                  onClick={handleGenerate}
+                  disabled={generate.isPending}
+                  className="btn-gold gold-glow"
+                  style={{ padding: "12px 24px", fontSize: 15 }}
+                >
+                  {generate.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Собираю...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />{" "}
+                      {hasSlides ? "Пересобрать" : "Сгенерировать"}
+                      <CostBadge action="carousel" />
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                <textarea
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  placeholder="Вставь готовый пост — я разобью его на слайды, сохранив твои формулировки (без пересказа)…"
+                  rows={6}
+                  style={{
+                    width: "100%",
+                    background: "var(--ink-3)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    fontFamily: "var(--font-body)",
+                    resize: "vertical",
+                  }}
+                />
+                <button
+                  onClick={handleSplit}
+                  disabled={split.isPending || sourceText.trim().length < 80}
+                  className="btn-gold gold-glow"
+                  style={{
+                    padding: "12px 24px",
+                    fontSize: 15,
+                    justifySelf: "start",
+                    opacity:
+                      split.isPending || sourceText.trim().length < 80
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  {split.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Разбиваю...
+                    </>
+                  ) : (
+                    <>
+                      <Layers className="w-4 h-4" /> Разбить на слайды
+                      <CostBadge action="splitToSlides" />
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             <div className="flex" style={{ gap: 18, flexWrap: "wrap" }}>
               <Inline label="Слайдов">
                 {[5, 6, 7, 8, 10].map((n) => (
@@ -578,17 +800,19 @@ export default function Carousel() {
                   </Chip>
                 ))}
               </Inline>
-              <Inline label="Сегмент ЦА">
-                {SEGMENTS.map((s) => (
-                  <Chip
-                    key={s.v}
-                    active={segment === s.v}
-                    onClick={() => setSegment(s.v)}
-                  >
-                    {s.label}
-                  </Chip>
-                ))}
-              </Inline>
+              {genMode === "topic" && (
+                <Inline label="Сегмент ЦА">
+                  {SEGMENTS.map((s) => (
+                    <Chip
+                      key={s.v}
+                      active={segment === s.v}
+                      onClick={() => setSegment(s.v)}
+                    >
+                      {s.label}
+                    </Chip>
+                  ))}
+                </Inline>
+              )}
             </div>
           </div>
         </div>
@@ -655,6 +879,21 @@ export default function Carousel() {
                 >
                   <Images className="w-4 h-4" />
                   Скачать все ({slides.length})
+                </button>
+                <button
+                  onClick={exportPdf}
+                  disabled={exporting}
+                  className="btn-gold"
+                  title="Один PDF со всеми слайдами — формат для LinkedIn"
+                  style={{
+                    padding: "10px 16px",
+                    fontSize: 13,
+                    background: "var(--ink-2)",
+                    color: "#fff",
+                  }}
+                >
+                  <Download className="w-4 h-4" />
+                  PDF
                 </button>
                 <button
                   onClick={saveToLibrary}
@@ -752,6 +991,11 @@ export default function Carousel() {
                       ratio={ratio}
                       align={align}
                       headWeight={fontPreset.headWeight}
+                      authorName={authorName}
+                      avatarUrl={avatarUrl}
+                      showSwipeHint={showSwipeHint}
+                      swipeText={swipeText}
+                      ctaText={ctaText}
                     />
                   </div>
                 )}
@@ -772,20 +1016,52 @@ export default function Carousel() {
                   <button
                     key={s.id}
                     onClick={() => setSelected(i)}
+                    /* Нативный HTML5 DnD: перетаскивание миниатюры
+                       меняет порядок слайдов (тот же паттерн, что в
+                       календаре). Стрелки в панели остаются как
+                       клавиатурно-доступная альтернатива. */
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", String(i));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverIdx(i);
+                    }}
+                    onDragLeave={() => setDragOverIdx(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverIdx(null);
+                      const from = parseInt(
+                        e.dataTransfer.getData("text/plain"),
+                        10,
+                      );
+                      if (Number.isNaN(from) || from === i) return;
+                      setSlides((prev) => {
+                        const next = [...prev];
+                        const [moved] = next.splice(from, 1);
+                        next.splice(i, 0, moved);
+                        return next;
+                      });
+                      setSelected(i);
+                    }}
                     style={{
                       flexShrink: 0,
                       width: 92,
                       borderRadius: 10,
                       padding: 0,
                       border:
-                        i === selected
-                          ? "2px solid var(--brand-gold)"
-                          : "2px solid transparent",
+                        dragOverIdx === i
+                          ? "2px dashed var(--brand-gold)"
+                          : i === selected
+                            ? "2px solid var(--brand-gold)"
+                            : "2px solid transparent",
                       background: "transparent",
-                      cursor: "pointer",
+                      cursor: "grab",
                       position: "relative",
                     }}
-                    title={`Слайд ${i + 1}`}
+                    title={`Слайд ${i + 1} — перетащи, чтобы поменять порядок`}
                   >
                     <SlideCanvas
                       slide={s}
@@ -799,6 +1075,11 @@ export default function Carousel() {
                       ratio={ratio}
                       align={align}
                       headWeight={fontPreset.headWeight}
+                      authorName={authorName}
+                      avatarUrl={avatarUrl}
+                      showSwipeHint={showSwipeHint}
+                      swipeText={swipeText}
+                      ctaText={ctaText}
                     />
                     <span
                       style={{
@@ -919,6 +1200,31 @@ export default function Carousel() {
                       </div>
                     </Field>
 
+                    {current.kind === "content" && (
+                      <Field label="Layout">
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {(
+                            [
+                              ["default", "Обычный"],
+                              ["quote", "Цитата"],
+                              ["list", "Список"],
+                              ["bignumber", "Цифра"],
+                            ] as [SlideLayout, string][]
+                          ).map(([v, label]) => (
+                            <Chip
+                              key={v}
+                              active={(current.layout ?? "default") === v}
+                              onClick={() =>
+                                updateSlide(selected, { layout: v })
+                              }
+                            >
+                              {label}
+                            </Chip>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
+
                     <Field label="Заголовок">
                       <textarea
                         value={current.headline}
@@ -937,6 +1243,13 @@ export default function Carousel() {
                         }
                         rows={4}
                         style={editAreaStyle}
+                      />
+                    </Field>
+
+                    <Field label="AI-правка слайда">
+                      <SlideAiActions
+                        slide={current}
+                        onApply={(patch) => updateSlide(selected, patch)}
                       />
                     </Field>
 
@@ -1108,12 +1421,46 @@ export default function Carousel() {
                       </div>
                     </Field>
 
-                    <Field label="Подпись автора">
+                    <Field label="Автор — имя">
+                      <input
+                        value={authorName}
+                        onChange={(e) => setAuthorName(e.target.value)}
+                        style={editInputStyle}
+                        placeholder="Имя или бренд"
+                      />
+                    </Field>
+
+                    <Field label="Автор — @handle">
                       <input
                         value={handle}
                         onChange={(e) => setHandle(e.target.value)}
                         style={editInputStyle}
-                        placeholder="@serbolin"
+                        placeholder="@your_handle"
+                      />
+                    </Field>
+
+                    <Field label="Аватар (круглый, в плашке автора)">
+                      <AvatarPicker
+                        avatarUrl={avatarUrl}
+                        onChange={setAvatarUrl}
+                      />
+                    </Field>
+
+                    <Field label="Swipe-хинт на обложке">
+                      <input
+                        value={swipeText}
+                        onChange={(e) => setSwipeText(e.target.value)}
+                        style={editInputStyle}
+                        placeholder="Листай"
+                      />
+                    </Field>
+
+                    <Field label="Текст CTA-кнопки (последний слайд)">
+                      <input
+                        value={ctaText}
+                        onChange={(e) => setCtaText(e.target.value)}
+                        style={editInputStyle}
+                        placeholder="Напиши мне в директ"
                       />
                     </Field>
 
@@ -1124,9 +1471,14 @@ export default function Carousel() {
                         onClick={() => setShowPages((v) => !v)}
                       />
                       <Toggle
-                        label="Показывать @автора"
+                        label="Плашка автора"
                         on={showHandle}
                         onClick={() => setShowHandle((v) => !v)}
+                      />
+                      <Toggle
+                        label="Swipe-хинт"
+                        on={showSwipeHint}
+                        onClick={() => setShowSwipeHint((v) => !v)}
                       />
                     </div>
                   </div>
@@ -1168,6 +1520,11 @@ export default function Carousel() {
               ratio={ratio}
               align={align}
               headWeight={fontPreset.headWeight}
+              authorName={authorName}
+              avatarUrl={avatarUrl}
+              showSwipeHint={showSwipeHint}
+              swipeText={swipeText}
+              ctaText={ctaText}
             />
           </div>
         ))}
@@ -1193,6 +1550,11 @@ function SlideCanvas({
   ratio,
   align = "left",
   headWeight = 700,
+  authorName = "",
+  avatarUrl,
+  showSwipeHint = false,
+  swipeText = "Листай",
+  ctaText = "",
 }: {
   slide: Slide;
   index: number;
@@ -1205,6 +1567,14 @@ function SlideCanvas({
   ratio: Ratio;
   align?: Align;
   headWeight?: number;
+  /* Брендинг-плашка: имя автора + круглый аватар (dataURL). */
+  authorName?: string;
+  avatarUrl?: string;
+  /* Swipe-хинт на обложке. */
+  showSwipeHint?: boolean;
+  swipeText?: string;
+  /* Текст CTA-кнопки последнего слайда; пусто → fallback на handle. */
+  ctaText?: string;
 }) {
   const dims = RATIO_DIMS[ratio];
   const height = (width * dims.h) / dims.w;
@@ -1212,6 +1582,7 @@ function SlideCanvas({
   const pad = 92 * u;
   const isCover = slide.kind === "cover";
   const isCta = slide.kind === "cta";
+  const layout: SlideLayout = slide.layout ?? "default";
 
   const headSize = (isCover ? 92 : 64) * u;
   const bodySize = (isCover ? 34 : 30) * u;
@@ -1350,33 +1721,155 @@ function SlideCanvas({
             }}
           />
         )}
-        <div
-          style={{
-            fontFamily: theme.fontHead,
-            fontSize: headSize,
-            fontWeight: headWeight,
-            lineHeight: 1.05,
-            letterSpacing: -0.5 * u,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {slide.headline}
-        </div>
-        {slide.body && (
-          <div
-            style={{
-              fontSize: bodySize,
-              lineHeight: 1.4,
-              color: theme.body,
-              marginTop: 28 * u,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {slide.body}
-          </div>
+        {/* Layout-варианты (этап 5). Quote/list/bignumber применимы к
+            content-слайдам; cover и cta всегда рендерятся дефолтно. */}
+        {layout === "quote" && !isCover && !isCta ? (
+          <>
+            <div
+              style={{
+                fontFamily: theme.fontHead,
+                fontSize: 140 * u,
+                fontWeight: 700,
+                lineHeight: 0.6,
+                color: theme.accent,
+                marginBottom: 8 * u,
+              }}
+            >
+              “
+            </div>
+            <div
+              style={{
+                fontFamily: theme.fontHead,
+                fontSize: 58 * u,
+                fontWeight: headWeight,
+                lineHeight: 1.15,
+                fontStyle: "italic",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {slide.headline}
+            </div>
+            {slide.body && (
+              <div
+                style={{
+                  fontSize: 26 * u,
+                  color: theme.body,
+                  marginTop: 30 * u,
+                }}
+              >
+                — {slide.body}
+              </div>
+            )}
+          </>
+        ) : layout === "bignumber" && !isCover && !isCta ? (
+          <>
+            <div
+              style={{
+                fontFamily: theme.fontHead,
+                fontSize: 200 * u,
+                fontWeight: 800,
+                lineHeight: 1,
+                color: theme.accent,
+                letterSpacing: -4 * u,
+              }}
+            >
+              {slide.headline}
+            </div>
+            {slide.body && (
+              <div
+                style={{
+                  fontSize: 34 * u,
+                  lineHeight: 1.35,
+                  color: theme.text,
+                  marginTop: 28 * u,
+                  whiteSpace: "pre-wrap",
+                  fontWeight: 600,
+                }}
+              >
+                {slide.body}
+              </div>
+            )}
+          </>
+        ) : layout === "list" && !isCover && !isCta ? (
+          <>
+            <div
+              style={{
+                fontFamily: theme.fontHead,
+                fontSize: headSize,
+                fontWeight: headWeight,
+                lineHeight: 1.05,
+                letterSpacing: -0.5 * u,
+                whiteSpace: "pre-wrap",
+                marginBottom: 32 * u,
+              }}
+            >
+              {slide.headline}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 * u, width: "100%" }}>
+              {slide.body
+                .split("\n")
+                .map((line) => line.replace(/^[-•—·*]\s*/, "").trim())
+                .filter(Boolean)
+                .map((line, li) => (
+                  <div
+                    key={li}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 16 * u,
+                      fontSize: bodySize,
+                      lineHeight: 1.4,
+                      color: theme.body,
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 12 * u,
+                        height: 12 * u,
+                        borderRadius: 9999,
+                        background: theme.accent,
+                        flexShrink: 0,
+                        marginTop: 12 * u,
+                      }}
+                    />
+                    <span style={{ whiteSpace: "pre-wrap" }}>{line}</span>
+                  </div>
+                ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              style={{
+                fontFamily: theme.fontHead,
+                fontSize: headSize,
+                fontWeight: headWeight,
+                lineHeight: 1.05,
+                letterSpacing: -0.5 * u,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {slide.headline}
+            </div>
+            {slide.body && (
+              <div
+                style={{
+                  fontSize: bodySize,
+                  lineHeight: 1.4,
+                  color: theme.body,
+                  marginTop: 28 * u,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {slide.body}
+              </div>
+            )}
+          </>
         )}
 
-        {/* CTA-кнопка */}
+        {/* CTA-кнопка: настраиваемый текст (из voice defaultCta или
+            руками), fallback на handle, чтобы кнопка не была пустой. */}
         {isCta && (
           <div
             style={{
@@ -1389,28 +1882,114 @@ function SlideCanvas({
               fontSize: 30 * u,
               padding: `${20 * u}px ${40 * u}px`,
               borderRadius: 9999,
+              maxWidth: "100%",
             }}
           >
-            {handle || "@serbolin"} →
+            {(ctaText || handle || "Напиши мне").trim()} →
           </div>
         )}
       </div>
 
-      {/* Футер с @автора */}
+      {/* Swipe-хинт на обложке: пилюля с текстом и стрелкой в нижнем
+          правом углу (или слева при align=right, чтобы не толкаться с
+          брендинг-плашкой). Ключевой виральный элемент — говорит
+          зрителю, что это карусель, а не одиночная картинка. */}
+      {isCover && showSwipeHint && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: pad,
+            ...(align === "right" ? { left: pad } : { right: pad }),
+            display: "flex",
+            alignItems: "center",
+            gap: 10 * u,
+            background: theme.accent,
+            color: theme.accentText,
+            fontFamily: theme.fontHead,
+            fontWeight: 700,
+            fontSize: 24 * u,
+            padding: `${14 * u}px ${28 * u}px`,
+            borderRadius: 9999,
+            zIndex: 3,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {swipeText || "Листай"}
+          <span style={{ fontSize: 26 * u, lineHeight: 1 }}>→</span>
+        </div>
+      )}
+
+      {/* Брендинг-плашка автора: круглый аватар + имя + @handle.
+          Заменяет старый текстовый футер. Показывается на всех слайдах
+          кроме CTA (там есть кнопка). Если нет ни имени, ни аватара —
+          рендерим просто handle, как раньше. */}
       {showHandle && !isCta && (
         <div
           style={{
             position: "absolute",
             bottom: pad,
-            fontFamily: theme.fontHead,
-            fontSize: kickerSize,
-            fontWeight: 600,
-            color: theme.body,
+            display: "flex",
+            alignItems: "center",
+            gap: 14 * u,
             zIndex: 2,
             ...footerSide,
+            ...(align === "center"
+              ? { justifyContent: "center" }
+              : align === "right"
+                ? { flexDirection: "row-reverse" as const }
+                : {}),
           }}
         >
-          {handle}
+          {avatarUrl && (
+            <img
+              src={avatarUrl}
+              alt=""
+              crossOrigin="anonymous"
+              style={{
+                width: 52 * u,
+                height: 52 * u,
+                borderRadius: 9999,
+                objectFit: "cover",
+                border: `${2 * u}px solid ${theme.accent}`,
+                flexShrink: 0,
+              }}
+            />
+          )}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2 * u,
+              textAlign: align === "right" ? "right" : "left",
+            }}
+          >
+            {authorName && (
+              <span
+                style={{
+                  fontFamily: theme.fontHead,
+                  fontSize: kickerSize,
+                  fontWeight: 700,
+                  color: theme.text,
+                  lineHeight: 1.15,
+                }}
+              >
+                {authorName}
+              </span>
+            )}
+            {handle && (
+              <span
+                style={{
+                  fontFamily: theme.fontHead,
+                  fontSize: authorName ? 18 * u : kickerSize,
+                  fontWeight: 600,
+                  color: theme.body,
+                  lineHeight: 1.15,
+                }}
+              >
+                {handle}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1820,3 +2399,172 @@ const editInputStyle: React.CSSProperties = {
   fontSize: 14,
   fontFamily: "var(--font-body)",
 };
+
+/* Загрузка аватара для брендинг-плашки. Файл конвертируется в dataURL
+   (как фоновые фото) — экспорт через html-to-image рендерит без CORS-
+   проблем. Лимит 1 MB: аватар маленький (52px на слайде), тяжёлый
+   файл раздул бы payload дизайна в D1 без пользы. */
+function AvatarPicker({
+  avatarUrl,
+  onChange,
+}: {
+  avatarUrl: string | undefined;
+  onChange: (v: string | undefined) => void;
+}) {
+  const pick = async (file: File | null) => {
+    if (!file) return;
+    if (!ALLOWED_MIME.test(file.type)) {
+      toast.error("Только JPG / PNG / WebP");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      toast.error("Аватар до 1 MB");
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      onChange(dataUrl);
+    } catch {
+      toast.error("Не удалось прочитать файл");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {avatarUrl ? (
+        <>
+          <img
+            src={avatarUrl}
+            alt=""
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 9999,
+              objectFit: "cover",
+              border: "2px solid var(--brand-gold)",
+              flexShrink: 0,
+            }}
+          />
+          <button
+            onClick={() => onChange(undefined)}
+            style={{
+              padding: "8px 14px",
+              background: "var(--ink-2)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "var(--brand-platinum)",
+              borderRadius: 9999,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Убрать
+          </button>
+        </>
+      ) : (
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            background: "var(--ink-2)",
+            border: "1px dashed rgba(255,255,255,0.2)",
+            color: "var(--brand-platinum)",
+            borderRadius: 10,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <ImageIcon className="w-4 h-4" />
+          Загрузить фото
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: "none" }}
+            onChange={(e) => pick(e.target.files?.[0] ?? null)}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+/* AI-действия над выбранным слайдом (этап 3): 4 кнопки-чипа →
+   content.refineSlide → результат сразу применяется через onApply.
+   «Усилить хук» показывается только на обложке — там он и нужен. */
+function SlideAiActions({
+  slide,
+  onApply,
+}: {
+  slide: Slide;
+  onApply: (patch: Partial<Slide>) => void;
+}) {
+  const refine = trpc.content.refineSlide.useMutation();
+  const [running, setRunning] = useState<string | null>(null);
+
+  const ACTIONS: {
+    v: "rewrite" | "shorten" | "punchier" | "concretize";
+    label: string;
+    coverOnly?: boolean;
+  }[] = [
+    { v: "rewrite", label: "Переписать" },
+    { v: "shorten", label: "Сократить" },
+    { v: "punchier", label: "Усилить хук", coverOnly: true },
+    { v: "concretize", label: "Конкретика" },
+  ];
+
+  const run = async (action: (typeof ACTIONS)[number]["v"]) => {
+    if (refine.isPending) return;
+    setRunning(action);
+    try {
+      const r = await refine.mutateAsync({
+        headline: slide.headline,
+        body: slide.body,
+        kind: slide.kind,
+        action,
+      });
+      onApply({ headline: r.headline, body: r.body });
+      toast.success("Слайд обновлён");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Не удалось");
+    } finally {
+      setRunning(null);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      {ACTIONS.filter((a) => !a.coverOnly || slide.kind === "cover").map(
+        (a) => (
+          <button
+            key={a.v}
+            onClick={() => run(a.v)}
+            disabled={refine.isPending}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 13px",
+              borderRadius: 9999,
+              border: "1px solid rgba(212,168,67,0.32)",
+              background: "transparent",
+              color: "var(--brand-gold)",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              opacity: refine.isPending && running !== a.v ? 0.4 : 1,
+            }}
+          >
+            {running === a.v ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
+            {a.label}
+          </button>
+        ),
+      )}
+      <CostBadge action="refineSlide" />
+    </div>
+  );
+}

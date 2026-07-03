@@ -107,6 +107,7 @@ const useTemplateFromQuery = (): [string | null, (v: string | null) => void] => 
 };
 
 export default function ContentGenerator() {
+  const [, navigate] = useLocation();
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState<Mode>("pack");
   const [tone, setTone] = useState<Tone>("expert");
@@ -693,19 +694,53 @@ export default function ContentGenerator() {
             />
           )}
           {mode === "post" && post.data && (
-            <ResultCard
-              title="Готовый пост"
-              text={refinedOverrides.post ?? post.data.post}
-              copyId="post"
-              copiedId={copiedId}
-              onCopy={handleCopy}
-              onSend={() =>
-                sendPostTG.mutate({
-                  title: post.data!.title,
-                  content: refinedOverrides.post ?? post.data!.post,
-                  })
-              }
-            />
+            <>
+              <ResultCard
+                title="Готовый пост"
+                text={refinedOverrides.post ?? post.data.post}
+                copyId="post"
+                copiedId={copiedId}
+                onCopy={handleCopy}
+                onSend={() =>
+                  sendPostTG.mutate({
+                    title: post.data!.title,
+                    content: refinedOverrides.post ?? post.data!.post,
+                    })
+                }
+              />
+              {/* Пост → карусель: кладём текст в sessionStorage и ведём
+                  в конструктор — он подхватит и разобьёт на слайды. */}
+              <button
+                onClick={() => {
+                  sessionStorage.setItem(
+                    "cs.carousel_source_text",
+                    refinedOverrides.post ?? post.data!.post,
+                  );
+                  sessionStorage.setItem(
+                    "cs.carousel_source_title",
+                    post.data!.title,
+                  );
+                  navigate("/carousel");
+                }}
+                style={{
+                  marginTop: 10,
+                  padding: "10px 18px",
+                  background: "transparent",
+                  border: "1px solid rgba(212,168,67,0.4)",
+                  color: "var(--brand-gold)",
+                  borderRadius: 9999,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Layers className="w-4 h-4" />
+                Сделать карусель из этого поста
+              </button>
+            </>
           )}
           {mode === "reels" && reels.data && (
             <ResultCard

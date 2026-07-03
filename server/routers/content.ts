@@ -373,26 +373,31 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
 Правила слайдов:
 - Слайд 1 — ОБЛОЖКА: мощный кликбейт-хук (≤ 8 слов в headline) + подзаголовок-крючок (≤ 12 слов).
 - Средние слайды — КОНТЕНТ: одна мысль на слайд. headline ≤ 6 слов, body 1-2 коротких фразы (≤ 22 слова).
-- Последний слайд — CTA: призыв (написать Эдуарду / забрать план / подписаться).
-Голос Эдуарда: «ты», без канцелярита, можно эмодзи в меру.`;
+- Последний слайд — CTA: призыв (написать автору / забрать план / подписаться).`;
 
       const user = `Тема карусели: «${input.title}».
 Сделай ровно ${input.slides} слайдов. Верни строго JSON без markdown:
 {
   "slides": [
     { "kind": "cover", "headline": "...", "body": "..." },
-    { "kind": "content", "headline": "...", "body": "..." },
+    { "kind": "content", "layout": "default", "headline": "...", "body": "..." },
     { "kind": "cta", "headline": "...", "body": "..." }
   ]
 }
-Первый слайд kind=cover, последний kind=cta, остальные kind=content.`;
+Первый слайд kind=cover, последний kind=cta, остальные kind=content.
+Для content-слайдов подбирай layout под содержание:
+- "default" — обычный (заголовок + текст);
+- "quote" — если слайд построен вокруг сильной фразы-цитаты (headline = цитата, body = кому принадлежит/пояснение);
+- "list" — если перечисление (body = пункты, каждый с новой строки);
+- "bignumber" — если в центре цифра/факт (headline = ТОЛЬКО цифра вроде «87%» или «×3», body = что она значит).
+Используй 1-2 нестандартных layout на карусель, не больше — разнообразие без пестроты.`;
 
       const { text: raw, model } = await invokeForUser(ctx.user, system, user);
       const cleaned = raw
         .replace(/^```(json)?/i, "")
         .replace(/```$/i, "")
         .trim();
-      type Slide = { kind: string; headline: string; body: string };
+      type Slide = { kind: string; layout?: string; headline: string; body: string };
       let slides: Slide[] = [];
       try {
         const parsed = JSON.parse(cleaned) as { slides: Slide[] };
@@ -410,6 +415,9 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
                   : s.kind === "cover" || s.kind === "cta"
                     ? "content"
                     : s.kind || "content",
+            layout: ["quote", "list", "bignumber"].includes(s.layout ?? "")
+              ? s.layout
+              : undefined,
             headline: s.headline.trim().slice(0, 120),
             body: (s.body ?? "").trim().slice(0, 280),
           }));
@@ -422,6 +430,149 @@ predicted engagement (1-10). Опирайся на блок «ВИРАЛЬНЫЕ
         throw new Error("Не удалось сгенерировать слайды, попробуй ещё раз.");
       }
       return { slides, title: input.title, model };
+    }),
+
+  /* ---------- ПОСТ → КАРУСЕЛЬ (этап 4 плана каруселей) ----------
+     Разбивает ГОТОВЫЙ текст (свой пост юзера или результат Студии)
+     на слайды, максимально сохраняя формулировки автора. Это НЕ
+     пересказ: модель режет и сокращает, но не переписывает своими
+     словами — иначе теряется голос. */
+  splitToSlides: protectedProcedure
+    .input(
+      z.object({
+        text: z.string().min(80, "Нужен текст хотя бы на пару абзацев").max(8000),
+        slides: z.number().int().min(3).max(12).default(7),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const system = `Текущая задача: разбить ГОТОВЫЙ пост автора на ${input.slides} слайдов Instagram-карусели.
+
+КЛЮЧЕВОЕ ПРАВИЛО: НЕ переписывай текст своими словами. Используй
+формулировки автора как есть. Можно сокращать фразы и убирать связки,
+нельзя менять лексику и заменять авторские выражения синонимами.
+
+Правила слайдов:
+- Слайд 1 — ОБЛОЖКА: главный хук поста (первая строка или самая цепкая
+  фраза автора, ≤ 10 слов) + подзаголовок из текста.
+- Средние слайды — одна мысль на слайд: headline ≤ 6 слов (из текста),
+  body 1-2 фразы автора (≤ 25 слов).
+- Последний слайд — CTA: призыв из финала поста; если в тексте нет
+  явного CTA — короткое «Сохрани, чтобы не потерять».`;
+
+      const user = `Вот пост, который нужно разбить на ровно ${input.slides} слайдов:
+
+"""
+${input.text.trim()}
+"""
+
+Верни строго JSON без markdown:
+{
+  "slides": [
+    { "kind": "cover", "headline": "...", "body": "..." },
+    { "kind": "content", "headline": "...", "body": "..." },
+    { "kind": "cta", "headline": "...", "body": "..." }
+  ]
+}
+Первый слайд kind=cover, последний kind=cta, остальные kind=content.`;
+
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
+      const cleaned = raw
+        .replace(/^```(json)?/i, "")
+        .replace(/```$/i, "")
+        .trim();
+      type Slide = { kind: string; layout?: string; headline: string; body: string };
+      let slides: Slide[] = [];
+      try {
+        const parsed = JSON.parse(cleaned) as { slides: Slide[] };
+        slides = (parsed.slides ?? [])
+          .filter(
+            (s) =>
+              typeof s.headline === "string" && s.headline.trim().length > 0,
+          )
+          .map((s, i, arr) => ({
+            kind:
+              i === 0
+                ? "cover"
+                : i === arr.length - 1
+                  ? "cta"
+                  : "content",
+            headline: s.headline.trim().slice(0, 120),
+            body: (s.body ?? "").trim().slice(0, 280),
+          }));
+      } catch {
+        throw new Error(
+          `LLM не вернул валидный JSON слайдов: ${cleaned.slice(0, 200)}`,
+        );
+      }
+      if (slides.length === 0) {
+        throw new Error("Не удалось разбить текст, попробуй ещё раз.");
+      }
+      return { slides, model };
+    }),
+
+  /* ---------- AI-ПРАВКА ОДНОГО СЛАЙДА (этап 3) ----------
+     Точечные действия над выбранным слайдом: переписать, сократить,
+     усилить хук, добавить конкретику. Дёшево (~30-60 токенов баланса):
+     промпт короткий, вывод — пара строк JSON. */
+  refineSlide: protectedProcedure
+    .input(
+      z.object({
+        headline: z.string().min(1).max(200),
+        body: z.string().max(400).default(""),
+        kind: z.enum(["cover", "content", "cta"]).default("content"),
+        action: z.enum(["rewrite", "shorten", "punchier", "concretize"]),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const ACTION_HINTS: Record<typeof input.action, string> = {
+        rewrite:
+          "Перепиши слайд другими словами, сохранив смысл. Дай свежую подачу.",
+        shorten:
+          "Сократи максимально: headline ≤ 5 слов, body ≤ 12 слов. Убери всё лишнее, оставь суть.",
+        punchier:
+          "Усиль хук: сделай headline провокационнее и конкретнее (цифра, отрицание, личный опыт). Не желтизна — интрига.",
+        concretize:
+          "Добавь конкретику: цифру, пример, точное действие вместо общих слов.",
+      };
+
+      const kindHint =
+        input.kind === "cover"
+          ? "Это ОБЛОЖКА карусели — headline должен цеплять в ленте."
+          : input.kind === "cta"
+            ? "Это CTA-слайд — призыв к действию."
+            : "Это контент-слайд — одна мысль.";
+
+      const system = `Текущая задача: правка одного слайда Instagram-карусели.
+${kindHint}
+${ACTION_HINTS[input.action]}
+Ограничения: headline ≤ 10 слов, body ≤ 25 слов.`;
+
+      const user = `Текущий слайд:
+headline: ${input.headline}
+body: ${input.body || "(пусто)"}
+
+Верни строго JSON без markdown: { "headline": "...", "body": "..." }`;
+
+      const { text: raw, model } = await invokeForUser(ctx.user, system, user);
+      const cleaned = raw
+        .replace(/^```(json)?/i, "")
+        .replace(/```$/i, "")
+        .trim();
+      try {
+        const parsed = JSON.parse(cleaned) as {
+          headline?: string;
+          body?: string;
+        };
+        const headline = (parsed.headline ?? "").trim().slice(0, 120);
+        if (!headline) throw new Error("empty");
+        return {
+          headline,
+          body: (parsed.body ?? "").trim().slice(0, 280),
+          model,
+        };
+      } catch {
+        throw new Error("LLM вернул невалидный ответ, попробуй ещё раз.");
+      }
     }),
 
   /* ---------- BRAND-VOICE VALIDATOR — новая фича ---------- */
