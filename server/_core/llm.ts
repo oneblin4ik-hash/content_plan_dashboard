@@ -252,6 +252,34 @@ const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/* ── Quota-кэш основной модели ─────────────────────────────────
+   Когда дневная квота gemini-3.5-flash исчерпана (429 +
+   RESOURCE_EXHAUSTED), нет смысла бить в неё каждым следующим
+   запросом — это лишние ~300-600мс задержки и пустой subrequest.
+   Ставим isolate-локальный флаг на 10 минут: пока он активен,
+   invokeLLM начинает сразу с резервной модели. Через 10 минут
+   снова пробуем основную — так после сброса квоты (или спада
+   нагрузки) возврат на 3.5 происходит автоматически.
+
+   Храним в globalThis, потому что модульный scope в Workers может
+   пересоздаваться реже, чем хочется для чистоты, а точность тут
+   не критична: кэш — оптимизация задержки, не источник истины. */
+const QUOTA_BACKOFF_MS = 10 * 60 * 1000;
+
+function isPrimaryQuotaExhausted(): boolean {
+  const until = (globalThis as Record<string, unknown>)
+    .__llm_quota_exhausted_until as number | undefined;
+  return typeof until === "number" && Date.now() < until;
+}
+
+function markPrimaryQuotaExhausted(): void {
+  (globalThis as Record<string, unknown>).__llm_quota_exhausted_until =
+    Date.now() + QUOTA_BACKOFF_MS;
+  console.warn(
+    `[llm] primary model quota exhausted — переключаюсь на fallback на ${QUOTA_BACKOFF_MS / 60000} мин`,
+  );
+}
+
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -353,10 +381,20 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
        1) ретраим транзиентные ошибки с экспоненциальным backoff;
        2) если основная модель так и не ответила — один заход на
           резервную (gemini-2.5-flash), которая стабильна.
-     На неретраебельных ошибках (400/401/404) падаем сразу. */
-  const models = route.fallbackModel && route.fallbackModel !== route.model
-    ? [route.model, route.fallbackModel]
-    : [route.model];
+     На неретраебельных ошибках (400/401/404) падаем сразу.
+
+     Если по недавнему запросу известно, что квота основной модели
+     исчерпана (quota-кэш, TTL 10 мин) — не мучаем её, начинаем
+     сразу с резервной. Приоритет 3.5 возвращается автоматически
+     после истечения TTL. */
+  const hasFallback =
+    !!route.fallbackModel && route.fallbackModel !== route.model;
+  const models =
+    hasFallback && isPrimaryQuotaExhausted()
+      ? [route.fallbackModel as string]
+      : hasFallback
+        ? [route.model, route.fallbackModel as string]
+        : [route.model];
 
   let lastError = "";
   for (let mi = 0; mi < models.length; mi++) {
@@ -393,10 +431,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       // 429 с пометкой RESOURCE_EXHAUSTED — это daily quota free-tier'а
       // AI Studio (gemini-3.5-flash = 20 RPD). Ретраи внутри суток
       // бесполезны: только тратим время пользователя. Сразу переходим
-      // к резервной модели.
+      // к резервной модели и запоминаем в quota-кэше, чтобы следующие
+      // запросы не бились в исчерпанную модель.
       const isQuotaExhausted =
         response.status === 429 && /RESOURCE_EXHAUSTED/i.test(errorText);
       if (isQuotaExhausted) {
+        if (model === route.model && hasFallback) {
+          markPrimaryQuotaExhausted();
+        }
         break; // выходим из цикла попыток, идём к следующей модели
       }
 
