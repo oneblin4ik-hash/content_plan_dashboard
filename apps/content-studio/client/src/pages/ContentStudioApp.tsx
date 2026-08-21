@@ -6,7 +6,7 @@ import {
   LayoutGrid, Library, Lightbulb, LoaderCircle, MessageCircle, MoreHorizontal, PenLine, Plus,
   Search, Sparkles, Target, Trash2, Users, Video, X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 
 type View = "ideas" | "studio" | "plan" | "library" | "voice" | "analytics";
 type Modal = "idea" | "folder" | "metric" | null;
@@ -53,6 +53,8 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
   const [folderFilter, setFolderFilter] = useState<number | "all">("all");
   const [segmentCode, setSegmentCode] = useState("S3");
   const [metricItemId, setMetricItemId] = useState<number | null>(null);
+  const navRef = useRef<HTMLElement | null>(null);
+  const viewSwipeStart = useRef<{ x: number; y: number } | null>(null);
   const utils = trpc.useUtils();
   const boot = trpc.contentStudio.bootstrap.useQuery(undefined, { refetchOnWindowFocus: false });
   const data = boot.data as StudioData | undefined;
@@ -67,6 +69,10 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
   const updateSettings = trpc.contentStudio.settings.update.useMutation({ onSuccess: refresh });
 
   useEffect(() => { if (data?.settings?.activeSegmentId) setSegmentCode(data.settings.activeSegmentId); }, [data?.settings?.activeSegmentId]);
+  useEffect(() => {
+    if (window.innerWidth > 780) return;
+    navRef.current?.querySelector<HTMLElement>(`[data-view="${view}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [view]);
 
   const items = data?.items ?? [];
   const activeSegment = data?.segments.find(segment => segment.code === segmentCode) ?? data?.segments[0];
@@ -113,6 +119,24 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     await createMetric.mutateAsync({ itemId: metricItemId, views: number("views"), reactions: number("reactions"), comments: number("comments"), saves: number("saves"), shares: number("shares"), linkClicks: number("linkClicks"), leads: number("leads"), notes: null });
     setModal(null); setMetricItemId(null);
   };
+  const isInteractiveTouchTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("button, input, textarea, select, a, [data-no-view-swipe]"));
+  const handleViewTouchStart = (event: TouchEvent<HTMLElement>) => {
+    if (window.innerWidth > 780 || modal || isInteractiveTouchTarget(event.target)) return;
+    const touch = event.touches[0];
+    viewSwipeStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+  const handleViewTouchEnd = (event: TouchEvent<HTMLElement>) => {
+    const start = viewSwipeStart.current;
+    viewSwipeStart.current = null;
+    if (!start || window.innerWidth > 780 || modal || isInteractiveTouchTarget(event.target)) return;
+    const touch = event.changedTouches[0];
+    const x = touch.clientX - start.x;
+    const y = touch.clientY - start.y;
+    if (Math.abs(x) < 70 || Math.abs(x) <= Math.abs(y) * 1.35) return;
+    const currentIndex = navigation.findIndex(entry => entry.id === view);
+    const nextIndex = Math.max(0, Math.min(navigation.length - 1, currentIndex + (x < 0 ? 1 : -1)));
+    if (nextIndex !== currentIndex) { setView(navigation[nextIndex].id); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  };
 
   if (boot.isLoading) return <div className="workspace-loading"><LoaderCircle className="spin" size={26} />Загружаю рабочую базу…</div>;
   if (boot.error || !data) return <div className="workspace-loading"><X size={25} />Не удалось загрузить данные. Обновите страницу.</div>;
@@ -121,10 +145,10 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     <aside className="studio-nav">
       <div className="brand-block"><div className="brand-mark"><Sparkles size={17} /></div><div><strong>CONTENT</strong><span>STUDIO / SERBOLIN</span></div></div>
       <div className="nav-caption">Личный кабинет<br />контент-системы</div>
-      <nav>{navigation.map(entry => { const Icon = entry.icon; return <button key={entry.id} onClick={() => setView(entry.id)} className={view === entry.id ? "nav-entry active" : "nav-entry"}><Icon size={17} /><div><b>{entry.label}</b><small>{entry.helper}</small></div><ChevronRight size={15} /></button>; })}</nav>
+      <nav ref={navRef}>{navigation.map(entry => { const Icon = entry.icon; return <button key={entry.id} data-view={entry.id} onClick={() => setView(entry.id)} className={view === entry.id ? "nav-entry active" : "nav-entry"}><Icon size={17} /><div><b>{entry.label}</b><small>{entry.helper}</small></div><ChevronRight size={15} /></button>; })}</nav>
       <div className="nav-footer"><div className="avatar">ЭС</div><div><b>{userName}</b><span>owner · private</span></div></div>
     </aside>
-    <main className="studio-main">
+    <main className="studio-main" onTouchStart={handleViewTouchStart} onTouchEnd={handleViewTouchEnd}>
       <header className="studio-topbar"><div><span className="eyebrow">CONTENT STUDIO</span><h1>{navigation.find(entry => entry.id === view)?.label}</h1></div><div className="top-status"><span className="online-dot" />Данные синхронизированы</div></header>
       {view === "ideas" && <IdeasView ideas={filteredIdeas} folders={data.folders} segments={data.segments} activeFolder={folderFilter} onFolder={setFolderFilter} query={query} onQuery={setQuery} onCreate={() => startIdea()} onFolderCreate={() => setModal("folder")} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); setView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} onSaveGenerated={saveGeneratedIdea} />}
       {view === "studio" && <StudioView mode={studioMode} onMode={setStudioMode} draft={studioDraft} onDraft={setStudioDraft} goal={studioGoal} onGoal={setStudioGoal} voice={data.voice} templates={data.templates.filter(template => template.kind === studioMode && template.isActive)} segments={data.segments} activeSegment={activeSegment?.code ?? "S3"} onTemplate={template => setStudioDraft(draft => ({ ...draft, body: draft.body || `${data?.voice ? `Контекст голоса: ${data.voice.name} · ${data.voice.tone}\n\n` : ""}${template.structure}`, format: template.name }))} onSave={saveStudio} isSaving={createItem.isPending || updateItem.isPending} />}

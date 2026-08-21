@@ -40,6 +40,12 @@ describe("viralIdeas router", () => {
     expect(llmMock.invokeLLM.mock.calls[0][0].messages[1].content).toContain("питание в офисе");
   });
 
+  it("accepts the maximum UI selection of eight ideas", async () => {
+    await viralIdeasRouter.createCaller(context()).generate({ segmentId: "S3", channel: "both", count: 8 });
+
+    expect(llmMock.invokeLLM.mock.calls[0][0].messages[1].content).toContain("Сгенерируй 8 виральных идей");
+  });
+
   it("rejects an unknown segment before calling the model", async () => {
     await expect(viralIdeasRouter.createCaller(context()).generate({ segmentId: "S9" as never, channel: "reels", count: 3 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(llmMock.invokeLLM).not.toHaveBeenCalled();
