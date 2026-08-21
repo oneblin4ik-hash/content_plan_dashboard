@@ -11,6 +11,7 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e:public": "node scripts/public-studio-e2e.mjs",
+    "test:e2e:haptic-fallback": "node scripts/haptic-fallback-e2e.mjs",
     "test:e2e:viral:live": "node scripts/live-viral-ideas-e2e.mjs",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate"

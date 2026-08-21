@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { canTriggerHaptic, triggerHaptic } from "@/lib/haptics";
 import { FavoritesView, IdeaModal, IdeasView, LibraryView, StudioView, type ViralIdea } from "@/components/content-studio/StudioViews";
 import { priorityLabels, statusLabels } from "@shared/contentStudio";
 import {
@@ -101,6 +102,27 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
       root.removeEventListener("pointerleave", resetPointer);
     };
   }, [data]);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const onPress = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>("button:not([disabled]), [role='button'], a[href]") : null;
+      if (target && !target.hasAttribute("data-no-haptic")) {
+        if (!canTriggerHaptic()) {
+          target.dataset.hapticPressed = "true";
+          window.setTimeout(() => { delete target.dataset.hapticPressed; }, 160);
+        }
+        triggerHaptic("tap");
+      }
+    };
+    root.addEventListener("pointerdown", onPress, { passive: true });
+    return () => root.removeEventListener("pointerdown", onPress);
+  }, [data]);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.dataset.hapticFallback = String(!canTriggerHaptic());
+  }, [data]);
 
   const items = data?.items ?? [];
   const activeSegment = data?.segments.find(segment => segment.code === segmentCode) ?? data?.segments[0];
@@ -117,8 +139,12 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
   const saveGeneratedIdea = async (idea: ViralIdea, segmentId: string) => {
     await createItem.mutateAsync({ kind: "idea", status: "draft", title: idea.title, hook: idea.hook, body: idea.angle, format: idea.format, visual: idea.visual, cta: idea.cta, notes: `Цель: ${idea.objective}\nИсточник: Viral Ideas`, segmentId, channel: idea.channel, priority: "viral", folderId: null, scheduledFor: null, isFavorite: false });
     await refresh();
+    triggerHaptic("success");
   };
-  const toggleFavoriteIdea = (item: StudioData["items"][number]) => updateItem.mutate({ id: item.id, data: { isFavorite: !item.isFavorite } });
+  const toggleFavoriteIdea = async (item: StudioData["items"][number]) => {
+    await updateItem.mutateAsync({ id: item.id, data: { isFavorite: !item.isFavorite } });
+    triggerHaptic("success");
+  };
   const changeView = (nextView: View) => { setView(nextView); if (window.innerWidth <= 780) window.scrollTo({ top: 0, behavior: "smooth" }); };
   const saveIdea = async (event: FormEvent) => {
     event.preventDefault();
@@ -127,6 +153,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (editingIdeaId) await updateItem.mutateAsync({ id: editingIdeaId, data: values });
     else await createItem.mutateAsync({ kind: "idea", status: "draft", ...values, body: null, notes: null, scheduledFor: null, isFavorite: false });
     setModal(null); setIdeaDraft(initialIdea); setEditingIdeaId(null);
+    triggerHaptic("success");
   };
   const saveStudio = async () => {
     if (!studioDraft.title.trim()) return;
@@ -134,6 +161,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (editingMaterialId) await updateItem.mutateAsync({ id: editingMaterialId, data: values });
     else await createItem.mutateAsync({ kind: studioMode, status: "draft", priority: "high", folderId: null, ...values, scheduledFor: null, isFavorite: false });
     setStudioDraft({ ...initialDraft, segmentId: activeSegment?.code ?? "S3" }); setStudioGoal(""); setEditingMaterialId(null); setView("library");
+    triggerHaptic("success");
   };
   const openMaterial = (item: StudioData["items"][number]) => {
     setEditingMaterialId(item.id);
@@ -149,6 +177,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (!metricItemId) return;
     await createMetric.mutateAsync({ itemId: metricItemId, views: number("views"), reactions: number("reactions"), comments: number("comments"), saves: number("saves"), shares: number("shares"), linkClicks: number("linkClicks"), leads: number("leads"), notes: null });
     setModal(null); setMetricItemId(null);
+    triggerHaptic("success");
   };
   const isInteractiveTouchTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("button, input, textarea, select, a, [data-no-view-swipe]"));
   const handleViewTouchStart = (event: TouchEvent<HTMLElement>) => {
@@ -166,7 +195,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (Math.abs(x) < 70 || Math.abs(x) <= Math.abs(y) * 1.35) return;
     const currentIndex = navigation.findIndex(entry => entry.id === view);
     const nextIndex = Math.max(0, Math.min(navigation.length - 1, currentIndex + (x < 0 ? 1 : -1)));
-    if (nextIndex !== currentIndex) changeView(navigation[nextIndex].id);
+    if (nextIndex !== currentIndex) { triggerHaptic("navigation"); changeView(navigation[nextIndex].id); }
   };
 
   if (boot.isLoading) return <div className="workspace-loading"><LoaderCircle className="spin" size={26} />Загружаю рабочую базу…</div>;

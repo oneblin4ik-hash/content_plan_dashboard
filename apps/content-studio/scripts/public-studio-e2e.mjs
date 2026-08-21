@@ -116,6 +116,13 @@ try {
 
   // iPhone 16 Pro: bottom navigation and horizontal section swipes remain available.
   const mobile = await browser.newPage({ viewport: { width: 402, height: 874 } });
+  await mobile.addInitScript(() => {
+    window.__contentStudioHapticCount = 0;
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: () => { window.__contentStudioHapticCount += 1; return true; },
+    });
+  });
   await mobile.goto(baseUrl, { waitUntil: "networkidle" });
   await mobile.evaluate(() => window.scrollTo(0, 420));
   await mobile.waitForTimeout(80);
@@ -126,6 +133,7 @@ try {
   assert(mobileNavBox && mobileNavBox.y > 780, "The iPhone bottom navigation is not fixed above the safe area");
   await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Студия" }).click();
   await mobile.getByText("Быстрые шаблоны").waitFor();
+  assert(await mobile.evaluate(() => window.__contentStudioHapticCount) > 0, "A mobile navigation tap did not request haptic feedback");
   await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Идеи" }).click();
   await mobile.getByRole("heading", { name: "Идеи", exact: true }).waitFor();
   await mobile.locator(".studio-main").evaluate(node => {
@@ -135,6 +143,7 @@ try {
     node.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
   });
   await mobile.getByText("Быстрые шаблоны").waitFor();
+  assert(await mobile.evaluate(() => window.__contentStudioHapticCount) > 1, "A mobile section swipe did not request haptic feedback");
   await mobile.locator(".studio-main").evaluate(node => {
     const start = new Touch({ identifier: 1, target: node, clientX: 120, clientY: 220 });
     const end = new Touch({ identifier: 1, target: node, clientX: 360, clientY: 220 });
@@ -154,7 +163,7 @@ try {
   await mobile.getByRole("heading", { name: "Аналитика", exact: true }).waitFor();
   await mobile.close();
 
-  console.log(JSON.stringify({ success: true, checked: ["idea-count", "viral-ideas-ui", "ideas-create-edit", "favorites-open-in-studio", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "iphone-16-pro-parallax-all-bottom-nav-and-swipe"] }));
+  console.log(JSON.stringify({ success: true, checked: ["idea-count", "viral-ideas-ui", "ideas-create-edit", "favorites-open-in-studio", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "iphone-16-pro-parallax-haptics-all-bottom-nav-and-swipe"] }));
 } finally {
   await cleanup();
   await browser.close();
