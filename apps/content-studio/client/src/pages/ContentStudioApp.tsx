@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { IdeaModal, IdeasView, LibraryView, StudioView } from "@/components/content-studio/StudioViews";
+import { IdeaModal, IdeasView, LibraryView, StudioView, type ViralIdea } from "@/components/content-studio/StudioViews";
 import { priorityLabels, statusLabels } from "@shared/contentStudio";
 import {
   BarChart3, BookOpenText, CalendarDays, Check, ChevronRight, ClipboardCopy, FilePlus2, FolderPlus,
@@ -79,6 +79,10 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     setIdeaDraft(item ? { title: item.title, hook: item.hook ?? "", format: item.format ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, channel: item.channel === "telegram" ? "telegram" : "reels", priority: item.priority, folderId: item.folderId } : { ...initialIdea, segmentId: activeSegment?.code ?? "S3" });
     setModal("idea");
   };
+  const saveGeneratedIdea = async (idea: ViralIdea, segmentId: string) => {
+    await createItem.mutateAsync({ kind: "idea", status: "draft", title: idea.title, hook: idea.hook, body: idea.angle, format: idea.format, visual: idea.visual, cta: idea.cta, notes: `Цель: ${idea.objective}\nИсточник: Viral Ideas`, segmentId, channel: idea.channel, priority: "viral", folderId: null, scheduledFor: null, isFavorite: false });
+    await refresh();
+  };
   const saveIdea = async (event: FormEvent) => {
     event.preventDefault();
     if (!ideaDraft.title.trim()) return;
@@ -122,7 +126,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     </aside>
     <main className="studio-main">
       <header className="studio-topbar"><div><span className="eyebrow">CONTENT STUDIO</span><h1>{navigation.find(entry => entry.id === view)?.label}</h1></div><div className="top-status"><span className="online-dot" />Данные синхронизированы</div></header>
-      {view === "ideas" && <IdeasView ideas={filteredIdeas} folders={data.folders} activeFolder={folderFilter} onFolder={setFolderFilter} query={query} onQuery={setQuery} onCreate={() => startIdea()} onFolderCreate={() => setModal("folder")} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); setView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} />}
+      {view === "ideas" && <IdeasView ideas={filteredIdeas} folders={data.folders} segments={data.segments} activeFolder={folderFilter} onFolder={setFolderFilter} query={query} onQuery={setQuery} onCreate={() => startIdea()} onFolderCreate={() => setModal("folder")} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); setView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} onSaveGenerated={saveGeneratedIdea} />}
       {view === "studio" && <StudioView mode={studioMode} onMode={setStudioMode} draft={studioDraft} onDraft={setStudioDraft} goal={studioGoal} onGoal={setStudioGoal} voice={data.voice} templates={data.templates.filter(template => template.kind === studioMode && template.isActive)} segments={data.segments} activeSegment={activeSegment?.code ?? "S3"} onTemplate={template => setStudioDraft(draft => ({ ...draft, body: draft.body || `${data?.voice ? `Контекст голоса: ${data.voice.name} · ${data.voice.tone}\n\n` : ""}${template.structure}`, format: template.name }))} onSave={saveStudio} isSaving={createItem.isPending || updateItem.isPending} />}
       {view === "plan" && <PlanView items={upcoming} onSchedule={(item, value) => updateItem.mutate({ id: item.id, data: { scheduledFor: value ? new Date(`${value}T12:00:00`) : null, status: value ? "planned" : "draft" } })} onReady={item => updateItem.mutate({ id: item.id, data: { status: item.status === "published" ? "ready" : "published" } })} onLibrary={() => setView("library")} />}
       {view === "library" && <LibraryView items={items.filter(item => item.kind !== "idea")} onCopy={item => copyText(itemText(item))} onFavorite={item => updateItem.mutate({ id: item.id, data: { isFavorite: !item.isFavorite } })} onPlan={item => { updateItem.mutate({ id: item.id, data: { status: "planned", scheduledFor: item.scheduledFor ?? new Date() } }); setView("plan"); }} onEdit={openMaterial} onDelete={id => deleteItem.mutate({ id })} />}

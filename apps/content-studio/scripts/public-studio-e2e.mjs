@@ -35,8 +35,24 @@ let page;
 
 try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await page.route("**/api/trpc/contentStudio.ideas.generate?batch=1", async route => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([{ result: { data: { json: { ideas: [
+      { title: "QA e2e · viral план Б", hook: "Если сегодня есть только 20 минут — это уже план.", format: "POV", angle: "Показать реальный план Б вместо ожидания идеального вечера.", visual: "Таймер и коврик дома", cta: "Сохрани на будний вечер", channel: "reels", objective: "Сохранения" },
+      { title: "QA e2e · viral офисный обед", hook: "Твой обед не обязан быть идеальным, чтобы поддержать форму.", format: "Разбор дня", angle: "Разобрать три рабочих выбора в офисной столовой.", visual: "Ланч-бокс и офисный стол", cta: "Ответь словом ОФИС", channel: "telegram", objective: "Диалог" },
+      { title: "QA e2e · viral возврат", hook: "Один пропуск — не отмена всей недели.", format: "План Б", angle: "Дать одно правило возвращения в ритм.", visual: "Календарь с одной пропущенной отметкой", cta: "Перешли подруге", channel: "reels", objective: "Пересылки" },
+    ] } } } }]) });
+  });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Идеи", exact: true }).waitFor();
+
+  // Viral ideas: render generated cards and move a chosen idea into the standard save form.
+  await page.getByRole("button", { name: "Сгенерировать 6 идей" }).click();
+  const generated = page.locator(".viral-idea-card").filter({ hasText: "QA e2e · viral план Б" });
+  await generated.waitFor();
+  await generated.getByRole("button", { name: "Сохранить в банк" }).click();
+  await page.locator(".idea-row").filter({ hasText: "QA e2e · viral план Б" }).waitFor();
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator(".idea-row").filter({ hasText: "QA e2e · viral план Б" }).waitFor();
 
   // Ideas: create and edit without login.
   await page.getByRole("button", { name: "Новая идея" }).click();
@@ -96,7 +112,7 @@ try {
   await mobile.getByText("Смотри на то,").waitFor();
   await mobile.close();
 
-  console.log(JSON.stringify({ success: true, checked: ["ideas-create-edit", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "mobile-navigation"] }));
+  console.log(JSON.stringify({ success: true, checked: ["viral-ideas-ui", "ideas-create-edit", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "mobile-navigation"] }));
 } finally {
   await cleanup();
   await browser.close();

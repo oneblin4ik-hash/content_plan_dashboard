@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as db from "../db";
 import { publicProcedure, router } from "../_core/trpc";
+import { viralIdeasRouter } from "./viralIdeas";
 
 const idInput = z.object({ id: z.number().int().positive() });
 const dateField = z.union([z.null(), z.coerce.date()]).optional();
@@ -52,6 +53,7 @@ export const contentStudioRouter = router({
     await db.bootstrapStudio(ownerId());
     return db.getStudioData(ownerId());
   }),
+  ideas: viralIdeasRouter,
   folder: router({
     create: publicProcedure.input(z.object({ name: z.string().trim().min(1).max(80), color: z.string().regex(/^#[0-9A-Fa-f]{6}$/), sortOrder: z.number().int().min(0).optional() })).mutation(({ input }) => db.createFolder(ownerId(), input)),
     update: publicProcedure.input(idInput.extend({ data: z.object({ name: z.string().trim().min(1).max(80).optional(), color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(), sortOrder: z.number().int().min(0).optional() }) })).mutation(async ({ input }) => { await db.updateFolder(ownerId(), input.id, input.data); return { success: true }; }),
