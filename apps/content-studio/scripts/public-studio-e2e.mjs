@@ -70,9 +70,16 @@ try {
   await modal.getByPlaceholder("О чём стоит поговорить с аудиторией?").fill(qaIdeaEdited);
   await modal.getByRole("button", { name: "Сохранить" }).click();
   await page.locator(".idea-row").filter({ hasText: qaIdeaEdited }).waitFor();
+  const favoriteIdea = page.locator(".idea-row").filter({ hasText: qaIdeaEdited });
+  await favoriteIdea.getByTitle("В избранное").click();
+  await page.locator(".nav-entry").filter({ hasText: "Избранное" }).click();
+  await page.getByRole("heading", { name: "Избранные идеи.", exact: true }).waitFor();
+  const selectedFavorite = page.locator(".idea-row").filter({ hasText: qaIdeaEdited });
+  await selectedFavorite.waitFor();
+  await selectedFavorite.getByTitle("Открыть в Studio").click();
+  await page.getByText("Быстрые шаблоны").waitFor();
 
   // Studio: save a material with goal and voice context.
-  await page.locator(".nav-entry").filter({ hasText: "Студия" }).click();
   await page.locator(".composer-work .form-grid input").first().fill(qaMaterial);
   await page.locator(".composer-context input").fill("Проверка сохранения public-материала");
   await page.locator(".composer-work .form-grid textarea").nth(1).fill("Короткий черновик для проверки сохранения.");
@@ -107,12 +114,19 @@ try {
   await page.locator(".nav-entry").filter({ hasText: "Библиотека" }).click();
   await page.locator(".material-card").filter({ hasText: qaMaterial }).waitFor();
 
-  // iPhone 16 Pro: tap and horizontal section swipes remain available.
+  // iPhone 16 Pro: bottom navigation and horizontal section swipes remain available.
   const mobile = await browser.newPage({ viewport: { width: 402, height: 874 } });
   await mobile.goto(baseUrl, { waitUntil: "networkidle" });
-  await mobile.locator(".nav-entry").filter({ hasText: "Студия" }).click();
+  await mobile.evaluate(() => window.scrollTo(0, 420));
+  await mobile.waitForTimeout(80);
+  await mobile.locator(".studio-root").evaluate(node => node.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 350, clientY: 240 })));
+  const parallax = await mobile.locator(".studio-root").evaluate(node => ({ x: getComputedStyle(node).getPropertyValue("--parallax-x"), y: getComputedStyle(node).getPropertyValue("--parallax-y"), scrollY: window.scrollY, reduced: window.matchMedia("(prefers-reduced-motion: reduce)").matches }));
+  assert(Number.parseFloat(parallax.x) > 0 && Number.parseFloat(parallax.y) > 0, `The iPhone parallax layers did not react: ${JSON.stringify(parallax)}`);
+  const mobileNavBox = await mobile.locator(".mobile-bottom-nav").boundingBox();
+  assert(mobileNavBox && mobileNavBox.y > 780, "The iPhone bottom navigation is not fixed above the safe area");
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Студия" }).click();
   await mobile.getByText("Быстрые шаблоны").waitFor();
-  await mobile.locator(".nav-entry").filter({ hasText: "Идеи" }).click();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Идеи" }).click();
   await mobile.getByRole("heading", { name: "Идеи", exact: true }).waitFor();
   await mobile.locator(".studio-main").evaluate(node => {
     const start = new Touch({ identifier: 1, target: node, clientX: 360, clientY: 220 });
@@ -128,9 +142,19 @@ try {
     node.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
   });
   await mobile.getByRole("heading", { name: "Идеи", exact: true }).waitFor();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Избранное" }).click();
+  await mobile.getByRole("heading", { name: "Избранные идеи.", exact: true }).waitFor();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "План / календарь" }).click();
+  await mobile.getByRole("heading", { name: "План / календарь", exact: true }).waitFor();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Библиотека" }).click();
+  await mobile.getByRole("heading", { name: "Библиотека", exact: true }).waitFor();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Голос и ЦА" }).click();
+  await mobile.getByRole("heading", { name: "Голос и ЦА", exact: true }).waitFor();
+  await mobile.locator(".mobile-bottom-nav").getByRole("button", { name: "Аналитика" }).click();
+  await mobile.getByRole("heading", { name: "Аналитика", exact: true }).waitFor();
   await mobile.close();
 
-  console.log(JSON.stringify({ success: true, checked: ["idea-count", "viral-ideas-ui", "ideas-create-edit", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "iphone-16-pro-tap-and-swipe"] }));
+  console.log(JSON.stringify({ success: true, checked: ["idea-count", "viral-ideas-ui", "ideas-create-edit", "favorites-open-in-studio", "studio-save", "plan-publish", "voice", "analytics", "reload-persistence", "iphone-16-pro-parallax-all-bottom-nav-and-swipe"] }));
 } finally {
   await cleanup();
   await browser.close();

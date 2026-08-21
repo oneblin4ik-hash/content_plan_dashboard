@@ -1,14 +1,14 @@
 import { trpc } from "@/lib/trpc";
-import { IdeaModal, IdeasView, LibraryView, StudioView, type ViralIdea } from "@/components/content-studio/StudioViews";
+import { FavoritesView, IdeaModal, IdeasView, LibraryView, StudioView, type ViralIdea } from "@/components/content-studio/StudioViews";
 import { priorityLabels, statusLabels } from "@shared/contentStudio";
 import {
-  BarChart3, BookOpenText, CalendarDays, Check, ChevronRight, ClipboardCopy, FilePlus2, FolderPlus,
+  BarChart3, BookOpenText, CalendarDays, Check, ChevronRight, ClipboardCopy, FilePlus2, FolderPlus, Heart,
   LayoutGrid, Library, Lightbulb, LoaderCircle, MessageCircle, MoreHorizontal, PenLine, Plus,
   Search, Sparkles, Target, Trash2, Users, Video, X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 
-type View = "ideas" | "studio" | "plan" | "library" | "voice" | "analytics";
+type View = "ideas" | "studio" | "favorites" | "plan" | "library" | "voice" | "analytics";
 type Modal = "idea" | "folder" | "metric" | null;
 
 export type StudioData = {
@@ -21,13 +21,14 @@ export type StudioData = {
   settings: { activeSegmentId: string; strategyGoal: string | null } | null;
 };
 
-const navigation: Array<{ id: View; label: string; helper: string; icon: typeof Lightbulb }> = [
-  { id: "ideas", label: "Идеи", helper: "Банк тем", icon: Lightbulb },
-  { id: "studio", label: "Студия", helper: "Шаблоны", icon: Sparkles },
-  { id: "plan", label: "План / календарь", helper: "Расписание", icon: CalendarDays },
-  { id: "library", label: "Библиотека", helper: "Материалы", icon: Library },
-  { id: "voice", label: "Голос и ЦА", helper: "Контекст", icon: Users },
-  { id: "analytics", label: "Аналитика", helper: "Результаты", icon: BarChart3 },
+const navigation: Array<{ id: View; label: string; mobileLabel: string; helper: string; icon: typeof Lightbulb }> = [
+  { id: "ideas", label: "Идеи", mobileLabel: "Идеи", helper: "Банк тем", icon: Lightbulb },
+  { id: "studio", label: "Студия", mobileLabel: "Studio", helper: "Шаблоны", icon: Sparkles },
+  { id: "favorites", label: "Избранное", mobileLabel: "Отбор", helper: "Отбор", icon: Heart },
+  { id: "plan", label: "План / календарь", mobileLabel: "План", helper: "Расписание", icon: CalendarDays },
+  { id: "library", label: "Библиотека", mobileLabel: "Библио", helper: "Материалы", icon: Library },
+  { id: "voice", label: "Голос и ЦА", mobileLabel: "ЦА", helper: "Контекст", icon: Users },
+  { id: "analytics", label: "Аналитика", mobileLabel: "Метрики", helper: "Результаты", icon: BarChart3 },
 ];
 
 const initialIdea = { title: "", hook: "", format: "", visual: "", cta: "", segmentId: "S3", channel: "reels" as "reels" | "telegram", priority: "high" as "low" | "medium" | "high" | "viral", folderId: null as number | null };
@@ -54,6 +55,7 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
   const [segmentCode, setSegmentCode] = useState("S3");
   const [metricItemId, setMetricItemId] = useState<number | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const viewSwipeStart = useRef<{ x: number; y: number } | null>(null);
   const utils = trpc.useUtils();
   const boot = trpc.contentStudio.bootstrap.useQuery(undefined, { refetchOnWindowFocus: false });
@@ -73,10 +75,37 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (window.innerWidth > 780) return;
     navRef.current?.querySelector<HTMLElement>(`[data-view="${view}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [view]);
+  useEffect(() => {
+    const root = rootRef.current;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (!root || reduceMotion.matches) return;
+    let frame = 0;
+    const applyScroll = () => {
+      frame = 0;
+      root.style.setProperty("--parallax-y", `${Math.min(window.scrollY * .075, 54).toFixed(1)}px`);
+    };
+    const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(applyScroll); };
+    const onPointerMove = (event: PointerEvent) => {
+      const shift = ((event.clientX / window.innerWidth) - .5) * 18;
+      root.style.setProperty("--parallax-x", `${shift.toFixed(1)}px`);
+    };
+    const resetPointer = () => root.style.setProperty("--parallax-x", "0px");
+    window.addEventListener("scroll", onScroll, { passive: true });
+    root.addEventListener("pointermove", onPointerMove, { passive: true });
+    root.addEventListener("pointerleave", resetPointer, { passive: true });
+    applyScroll();
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      root.removeEventListener("pointermove", onPointerMove);
+      root.removeEventListener("pointerleave", resetPointer);
+    };
+  }, [data]);
 
   const items = data?.items ?? [];
   const activeSegment = data?.segments.find(segment => segment.code === segmentCode) ?? data?.segments[0];
   const filteredIdeas = useMemo(() => items.filter(item => item.kind === "idea" && (folderFilter === "all" || item.folderId === folderFilter) && [item.title, item.hook, item.format].join(" ").toLowerCase().includes(query.toLowerCase())), [items, folderFilter, query]);
+  const favoriteIdeas = useMemo(() => items.filter(item => item.kind === "idea" && item.isFavorite), [items]);
   const upcoming = useMemo(() => items.filter(item => item.scheduledFor).sort((a, b) => Number(new Date(a.scheduledFor!)) - Number(new Date(b.scheduledFor!))), [items]);
   const totals = useMemo(() => (data?.metrics ?? []).reduce((result, metric) => ({ views: result.views + metric.views, saves: result.saves + metric.saves, shares: result.shares + metric.shares, leads: result.leads + metric.leads }), { views: 0, saves: 0, shares: 0, leads: 0 }), [data?.metrics]);
 
@@ -89,6 +118,8 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     await createItem.mutateAsync({ kind: "idea", status: "draft", title: idea.title, hook: idea.hook, body: idea.angle, format: idea.format, visual: idea.visual, cta: idea.cta, notes: `Цель: ${idea.objective}\nИсточник: Viral Ideas`, segmentId, channel: idea.channel, priority: "viral", folderId: null, scheduledFor: null, isFavorite: false });
     await refresh();
   };
+  const toggleFavoriteIdea = (item: StudioData["items"][number]) => updateItem.mutate({ id: item.id, data: { isFavorite: !item.isFavorite } });
+  const changeView = (nextView: View) => { setView(nextView); if (window.innerWidth <= 780) window.scrollTo({ top: 0, behavior: "smooth" }); };
   const saveIdea = async (event: FormEvent) => {
     event.preventDefault();
     if (!ideaDraft.title.trim()) return;
@@ -135,28 +166,30 @@ export default function ContentStudioApp({ userName }: { userName: string }) {
     if (Math.abs(x) < 70 || Math.abs(x) <= Math.abs(y) * 1.35) return;
     const currentIndex = navigation.findIndex(entry => entry.id === view);
     const nextIndex = Math.max(0, Math.min(navigation.length - 1, currentIndex + (x < 0 ? 1 : -1)));
-    if (nextIndex !== currentIndex) { setView(navigation[nextIndex].id); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    if (nextIndex !== currentIndex) changeView(navigation[nextIndex].id);
   };
 
   if (boot.isLoading) return <div className="workspace-loading"><LoaderCircle className="spin" size={26} />Загружаю рабочую базу…</div>;
   if (boot.error || !data) return <div className="workspace-loading"><X size={25} />Не удалось загрузить данные. Обновите страницу.</div>;
 
-  return <div className="studio-root">
+  return <div className="studio-root" ref={rootRef}>
     <aside className="studio-nav">
       <div className="brand-block"><div className="brand-mark"><Sparkles size={17} /></div><div><strong>CONTENT</strong><span>STUDIO / SERBOLIN</span></div></div>
       <div className="nav-caption">Личный кабинет<br />контент-системы</div>
-      <nav ref={navRef}>{navigation.map(entry => { const Icon = entry.icon; return <button key={entry.id} data-view={entry.id} onClick={() => setView(entry.id)} className={view === entry.id ? "nav-entry active" : "nav-entry"}><Icon size={17} /><div><b>{entry.label}</b><small>{entry.helper}</small></div><ChevronRight size={15} /></button>; })}</nav>
+      <nav ref={navRef}>{navigation.map(entry => { const Icon = entry.icon; return <button key={entry.id} data-view={entry.id} aria-current={view === entry.id ? "page" : undefined} onClick={() => changeView(entry.id)} className={view === entry.id ? "nav-entry active" : "nav-entry"}><Icon size={17} /><div><b>{entry.label}</b><small>{entry.helper}</small></div><ChevronRight size={15} /></button>; })}</nav>
       <div className="nav-footer"><div className="avatar">ЭС</div><div><b>{userName}</b><span>owner · private</span></div></div>
     </aside>
     <main className="studio-main" onTouchStart={handleViewTouchStart} onTouchEnd={handleViewTouchEnd}>
       <header className="studio-topbar"><div><span className="eyebrow">CONTENT STUDIO</span><h1>{navigation.find(entry => entry.id === view)?.label}</h1></div><div className="top-status"><span className="online-dot" />Данные синхронизированы</div></header>
-      {view === "ideas" && <IdeasView ideas={filteredIdeas} folders={data.folders} segments={data.segments} activeFolder={folderFilter} onFolder={setFolderFilter} query={query} onQuery={setQuery} onCreate={() => startIdea()} onFolderCreate={() => setModal("folder")} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); setView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} onSaveGenerated={saveGeneratedIdea} />}
+      {view === "ideas" && <IdeasView ideas={filteredIdeas} folders={data.folders} segments={data.segments} activeFolder={folderFilter} onFolder={setFolderFilter} query={query} onQuery={setQuery} onCreate={() => startIdea()} onFolderCreate={() => setModal("folder")} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); changeView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} onFavorite={toggleFavoriteIdea} onSaveGenerated={saveGeneratedIdea} />}
       {view === "studio" && <StudioView mode={studioMode} onMode={setStudioMode} draft={studioDraft} onDraft={setStudioDraft} goal={studioGoal} onGoal={setStudioGoal} voice={data.voice} templates={data.templates.filter(template => template.kind === studioMode && template.isActive)} segments={data.segments} activeSegment={activeSegment?.code ?? "S3"} onTemplate={template => setStudioDraft(draft => ({ ...draft, body: draft.body || `${data?.voice ? `Контекст голоса: ${data.voice.name} · ${data.voice.tone}\n\n` : ""}${template.structure}`, format: template.name }))} onSave={saveStudio} isSaving={createItem.isPending || updateItem.isPending} />}
-      {view === "plan" && <PlanView items={upcoming} onSchedule={(item, value) => updateItem.mutate({ id: item.id, data: { scheduledFor: value ? new Date(`${value}T12:00:00`) : null, status: value ? "planned" : "draft" } })} onReady={item => updateItem.mutate({ id: item.id, data: { status: item.status === "published" ? "ready" : "published" } })} onLibrary={() => setView("library")} />}
-      {view === "library" && <LibraryView items={items.filter(item => item.kind !== "idea")} onCopy={item => copyText(itemText(item))} onFavorite={item => updateItem.mutate({ id: item.id, data: { isFavorite: !item.isFavorite } })} onPlan={item => { updateItem.mutate({ id: item.id, data: { status: "planned", scheduledFor: item.scheduledFor ?? new Date() } }); setView("plan"); }} onEdit={openMaterial} onDelete={id => deleteItem.mutate({ id })} />}
+      {view === "favorites" && <FavoritesView ideas={favoriteIdeas} onUse={item => { setEditingMaterialId(null); setStudioDraft({ title: item.title, hook: item.hook ?? "", body: item.body ?? "", visual: item.visual ?? "", cta: item.cta ?? "", segmentId: item.segmentId, format: item.format ?? "" }); setStudioMode(item.channel === "telegram" ? "post" : "reel"); changeView("studio"); }} onEdit={startIdea} onDelete={id => deleteItem.mutate({ id })} onFavorite={toggleFavoriteIdea} onCreate={() => startIdea()} />}
+      {view === "plan" && <PlanView items={upcoming} onSchedule={(item, value) => updateItem.mutate({ id: item.id, data: { scheduledFor: value ? new Date(`${value}T12:00:00`) : null, status: value ? "planned" : "draft" } })} onReady={item => updateItem.mutate({ id: item.id, data: { status: item.status === "published" ? "ready" : "published" } })} onLibrary={() => changeView("library")} />}
+      {view === "library" && <LibraryView items={items.filter(item => item.kind !== "idea")} onCopy={item => copyText(itemText(item))} onFavorite={item => updateItem.mutate({ id: item.id, data: { isFavorite: !item.isFavorite } })} onPlan={item => { updateItem.mutate({ id: item.id, data: { status: "planned", scheduledFor: item.scheduledFor ?? new Date() } }); changeView("plan"); }} onEdit={openMaterial} onDelete={id => deleteItem.mutate({ id })} />}
       {view === "voice" && <VoiceView voice={data.voice} segments={data.segments} selected={segmentCode} onSelect={code => { setSegmentCode(code); updateSettings.mutate({ activeSegmentId: code }); }} onVoice={input => updateVoice.mutate(input)} onSegment={(id, input) => updateSegment.mutate({ id, data: input })} />}
       {view === "analytics" && <AnalyticsView metrics={data.metrics} items={items.filter(item => item.status === "published")} totals={totals} onAdd={id => { setMetricItemId(id); setModal("metric"); }} />}
     </main>
+    <nav className="mobile-bottom-nav" aria-label="Основная навигация">{navigation.map(entry => { const Icon = entry.icon; return <button key={entry.id} aria-label={entry.label} aria-current={view === entry.id ? "page" : undefined} onClick={() => changeView(entry.id)} className={view === entry.id ? "mobile-nav-entry active" : "mobile-nav-entry"}><Icon size={19} /><span>{entry.mobileLabel}</span></button>; })}</nav>
     {modal === "idea" && <IdeaModal title={editingIdeaId ? "Изменить идею" : "Новая идея"} draft={ideaDraft} folders={data.folders} segments={data.segments} onChange={setIdeaDraft} onClose={() => { setModal(null); setEditingIdeaId(null); }} onSave={saveIdea} loading={createItem.isPending || updateItem.isPending} />}
     {modal === "folder" && <FolderModal onClose={() => setModal(null)} onSave={async (name, color) => { await createFolder.mutateAsync({ name, color }); setModal(null); }} loading={createFolder.isPending} />}
     {modal === "metric" && <MetricModal items={items.filter(item => item.status === "published")} selected={metricItemId} onSelect={setMetricItemId} onClose={() => setModal(null)} onSave={addMetric} loading={createMetric.isPending} />}
