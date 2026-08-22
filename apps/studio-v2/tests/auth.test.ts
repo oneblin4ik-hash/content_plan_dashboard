@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { call, json, login, migrate, reset } from "./helpers";
+import { call, json, login, migrate, reset, testEnv } from "./helpers";
 
 beforeAll(migrate);
 beforeEach(reset);
@@ -64,5 +64,24 @@ describe("защита от подбора", () => {
       expect((await attempt()).status).toBe(401);
     }
     expect((await attempt()).status).toBe(429);
+  });
+});
+
+describe("смена код-фразы", () => {
+  // Rotating a leaked passphrase is pointless if old cookies keep working.
+  it("делает недействительными уже выданные куки", async () => {
+    const cookie = await login();
+    expect((await call("/api/overview", { cookie })).status).toBe(200);
+
+    const previous = testEnv.STUDIO_PASSPHRASE;
+    testEnv.STUDIO_PASSPHRASE = "rotated-pass";
+    try {
+      expect((await call("/api/overview", { cookie })).status).toBe(401);
+    } finally {
+      testEnv.STUDIO_PASSPHRASE = previous;
+    }
+
+    // The old cookie works again only because the old passphrase is back.
+    expect((await call("/api/overview", { cookie })).status).toBe(200);
   });
 });

@@ -39,10 +39,14 @@ async function safeEqual(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
+/**
+ * Session keys are bound to the passphrase on purpose. Rotating
+ * STUDIO_PASSPHRASE after a leak has to lock out devices that already hold a
+ * 90-day cookie — otherwise rotation buys nothing. Deriving the key from the
+ * separate AUTH_SECRET alone would leave every issued cookie valid.
+ */
 function authSecret(env: Env): string {
-  // The passphrase doubles as key material when no separate secret is set, so
-  // rotating the passphrase also invalidates every issued session.
-  return env.AUTH_SECRET || env.STUDIO_PASSPHRASE || "";
+  return `${env.AUTH_SECRET ?? ""}\u0000${env.STUDIO_PASSPHRASE ?? ""}`;
 }
 
 export async function issueSession(env: Env): Promise<string> {

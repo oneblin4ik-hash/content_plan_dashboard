@@ -276,3 +276,90 @@ describe("генерация целиком", () => {
     expect(overview.usage.used).toBe(0);
   });
 });
+
+describe("гонки", () => {
+  /**
+   * Two tabs, or a double tap, used to slip past the cap: every request read
+   * the same count before any of them incremented it.
+   */
+  it("параллельные генерации не превышают дневной лимит", async () => {
+    const cookie = await login();
+
+    // Hold each provider call open so all six overlap inside the handler.
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(typeof input === "string" ? input : (input as Request).url ?? String(input));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return Response.json({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: JSON.stringify({ ideas: [idea("Параллельная тема")] }) }],
+            },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        call("/api/generate", {
+          method: "POST",
+          cookie,
+          body: JSON.stringify({ segmentCode: "S3", channel: "reels", count: 3, focus: "" }),
+        }),
+      ),
+    );
+
+    const ok = responses.filter((response) => response.status === 200);
+    const blocked = responses.filter((response) => response.status === 429);
+
+    // DAILY_GENERATION_LIMIT is 3 in the test environment.
+    expect(ok).toHaveLength(3);
+    expect(blocked).toHaveLength(3);
+    expect(calls).toHaveLength(3);
+
+    const overview = await json<{ usage: { used: number } }>(
+      await call("/api/overview", { cookie }),
+    );
+    expect(overview.usage.used).toBe(3);
+  });
+
+  it("повторное сохранение черновика не дублирует идеи", async () => {
+    const cookie = await login();
+    mockGemini([idea("Тема без дублей")]);
+
+    const generated = await json<{ draftId: number }>(
+      await call("/api/generate", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify({ segmentCode: "S3", channel: "reels", count: 3, focus: "" }),
+      }),
+    );
+
+    const save = () =>
+      call("/api/drafts/save", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify({ draftId: generated.draftId, indexes: [0], folderId: null }),
+      });
+
+    const [first, second] = await Promise.all([save(), save()]);
+    const codes = [first?.status, second?.status].sort();
+    expect(codes).toEqual([200, 409]);
+
+    const list = await json<{ ideas: Idea[] }>(await call("/api/ideas", { cookie }));
+    expect(list.ideas).toHaveLength(1);
+  });
+
+  it("сообщает понятно, когда черновика нет вовсе", async () => {
+    const cookie = await login();
+    const response = await call("/api/drafts/save", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ draftId: 999_999, indexes: [0], folderId: null }),
+    });
+    expect(response.status).toBe(404);
+    expect((await json<{ error: string }>(response)).error).toContain("не найден");
+  });
+});

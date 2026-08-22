@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   folderCreateSchema,
   folderUpdateSchema,
@@ -16,7 +16,6 @@ import { dailyLimit, type Env } from "../env";
 import { generateIdeas, LlmError } from "../llm";
 import {
   activeDraft,
-  bumpUsage,
   countIdeas,
   createDb,
   listFolders,
@@ -24,6 +23,8 @@ import {
   nowSeconds,
   purgeExpiredBin,
   readUsage,
+  releaseGeneration,
+  reserveGeneration,
   schema,
   type Db,
 } from "../store";
@@ -36,6 +37,14 @@ api.use("*", async (c, next) => {
   c.set("db", createDb(c.env.DB));
   await next();
 });
+
+/**
+ * Key used to spot an idea already present. The separator is a character a
+ * title cannot contain, so "Тема 5" + 12 cannot collide with "Тема" + "5 12".
+ */
+function dedupeKey(title: string, createdAt: number): string {
+  return `${title}\u0000${createdAt}`;
+}
 
 /** Turns a zod failure into the first human-readable message. */
 function firstIssue(error: { issues: Array<{ message: string }> }): string {
@@ -172,8 +181,9 @@ api.post("/generate", async (c) => {
 
   const db = c.get("db");
   const limit = dailyLimit(c.env);
-  const used = await readUsage(db);
-  if (used >= limit) {
+
+  // Reserved up front so two tabs cannot both slip past the cap.
+  if (!(await reserveGeneration(db, limit))) {
     return c.json({ error: `Дневной лимит генераций исчерпан (${limit}). Продолжим завтра.` }, 429);
   }
 
@@ -181,14 +191,13 @@ api.post("/generate", async (c) => {
   try {
     ideas = await generateIdeas(c.env, parsed.data);
   } catch (error) {
+    await releaseGeneration(db);
     const message =
       error instanceof LlmError
         ? error.message
         : "Не удалось связаться с генератором. Попробуйте ещё раз.";
     return c.json({ error: message }, 502);
   }
-
-  await bumpUsage(db);
 
   // Persisted immediately: a backgrounded tab must not cost a generation.
   const [row] = await db
@@ -210,20 +219,41 @@ api.post("/drafts/save", async (c) => {
   if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
 
   const db = c.get("db");
-  const [draft] = await db
-    .select()
-    .from(schema.drafts)
-    .where(eq(schema.drafts.id, parsed.data.draftId))
-    .limit(1);
 
-  if (!draft) return c.json({ error: "Черновик не найден — сгенерируйте идеи заново." }, 404);
+  /*
+   * Claiming the draft and marking it consumed is one statement, so a retried
+   * request or a double tap cannot read the same payload twice and insert the
+   * ideas again.
+   */
+  const [draft] = await db
+    .update(schema.drafts)
+    .set({ consumedAt: nowSeconds() })
+    .where(and(eq(schema.drafts.id, parsed.data.draftId), isNull(schema.drafts.consumedAt)))
+    .returning();
+
+  if (!draft) {
+    const [existing] = await db
+      .select({ id: schema.drafts.id })
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, parsed.data.draftId))
+      .limit(1);
+    return existing
+      ? c.json({ error: "Эти идеи уже сохранены." }, 409)
+      : c.json({ error: "Черновик не найден — сгенерируйте идеи заново." }, 404);
+  }
 
   const pool = JSON.parse(draft.payload) as Array<Record<string, string>>;
   const chosen = parsed.data.indexes
     .map((index) => pool[index])
     .filter((idea): idea is Record<string, string> => Boolean(idea));
 
-  if (chosen.length === 0) return c.json({ error: "Отметьте хотя бы одну идею." }, 400);
+  if (chosen.length === 0) {
+    await db
+      .update(schema.drafts)
+      .set({ consumedAt: null })
+      .where(eq(schema.drafts.id, draft.id));
+    return c.json({ error: "Отметьте хотя бы одну идею." }, 400);
+  }
 
   const folderId = parsed.data.folderId ?? draft.folderId;
   await db.insert(schema.ideas).values(
@@ -242,11 +272,6 @@ api.post("/drafts/save", async (c) => {
       source: "generated" as const,
     })),
   );
-
-  await db
-    .update(schema.drafts)
-    .set({ consumedAt: nowSeconds() })
-    .where(eq(schema.drafts.id, draft.id));
 
   return c.json({ saved: chosen.length, folderId });
 });
@@ -334,11 +359,11 @@ api.post("/import", async (c) => {
       .select({ title: schema.ideas.title, createdAt: schema.ideas.createdAt })
       .from(schema.ideas)
       .where(inArray(schema.ideas.title, chunk));
-    for (const row of rows) duplicates.add(`${row.title} ${row.createdAt}`);
+    for (const row of rows) duplicates.add(dedupeKey(row.title, row.createdAt));
   }
 
   const fresh = parsed.data.ideas.filter(
-    (idea) => !duplicates.has(`${idea.title} ${idea.createdAt}`),
+    (idea) => !duplicates.has(dedupeKey(idea.title, idea.createdAt)),
   );
 
   for (let i = 0; i < fresh.length; i += 100) {

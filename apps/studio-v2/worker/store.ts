@@ -186,15 +186,35 @@ export async function readUsage(db: Db): Promise<number> {
   return row?.count ?? 0;
 }
 
-export async function bumpUsage(db: Db): Promise<void> {
-  const day = today();
-  await db
+/**
+ * Claims one generation against the daily cap in a single statement, and
+ * returns false when the cap is already reached.
+ *
+ * Reserving before the model call rather than counting after it is what stops
+ * parallel tabs from overrunning the free quota: reading the count and
+ * incrementing it later leaves a window where every concurrent request sees
+ * the same value and all of them pass.
+ */
+export async function reserveGeneration(db: Db, limit: number): Promise<boolean> {
+  if (limit <= 0) return false;
+  const rows = await db
     .insert(schema.usage)
-    .values({ day, count: 1 })
+    .values({ day: today(), count: 1 })
     .onConflictDoUpdate({
       target: schema.usage.day,
       set: { count: sql`${schema.usage.count} + 1` },
-    });
+      setWhere: sql`${schema.usage.count} < ${limit}`,
+    })
+    .returning({ count: schema.usage.count });
+  return rows.length > 0;
+}
+
+/** Hands the reservation back when the model never produced anything. */
+export async function releaseGeneration(db: Db): Promise<void> {
+  await db
+    .update(schema.usage)
+    .set({ count: sql`max(${schema.usage.count} - 1, 0)` })
+    .where(eq(schema.usage.day, today()));
 }
 
 export async function purgeExpiredBin(db: Db): Promise<void> {
