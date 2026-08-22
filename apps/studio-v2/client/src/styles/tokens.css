@@ -1,0 +1,77 @@
+/* ==========================================================================
+   Crimson — tokens taken from the Serbolin design system handoff.
+   Red on black, nothing extra.
+   ========================================================================== */
+
+:root {
+  /* ---- surfaces ---- */
+  --void: #08080a;
+  --canvas: #0b0b0c;
+  --ink-1: #131315;
+  --ink-2: #1b1b1e;
+  --ink-3: #26262a;
+
+  /* ---- crimson ---- */
+  --red: #d8232a;
+  --red-bright: #f4363d;
+  --red-deep: #9e1319;
+  --red-hi: #ff525a;
+  --red-mid: #e62a32;
+  --red-lo: #b4151c;
+
+  /* ---- text ---- */
+  --w-1: #ffffff;
+  --w-2: #ededef;
+  --w-3: #c8c8ce;
+  --g-1: #9a9aa0;
+  --g-2: #8a8a90;
+  --g-3: #6b6b72;
+  --g-4: #4e4e56;
+
+  /* ---- semantic ---- */
+  --ok: #4caf50;
+  --ok-soft: #7bd98a;
+  --amber: #d4a843;
+
+  --hair: rgba(255, 255, 255, 0.1);
+  --hair-soft: rgba(255, 255, 255, 0.06);
+
+  /* ---- glass 2.0: diagonal fill, light top edge, dark bottom edge ---- */
+  --glass-fill: linear-gradient(
+    152deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.035) 46%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  --glass-drop: 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+  --blur: blur(24px) saturate(180%);
+
+  /* ---- glossy button: three-stop gradient + specular top half ---- */
+  --btn-grad: linear-gradient(180deg, var(--red-hi) 0%, var(--red-mid) 46%, var(--red-lo) 100%);
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -2px 8px rgba(90, 0, 4, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 28px -10px rgba(230, 42, 50, 0.6);
+  --btn-shadow-hi: inset 0 1px 0 rgba(255, 255, 255, 0.68), inset 0 -2px 8px rgba(90, 0, 4, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.35), 0 20px 38px -10px rgba(230, 42, 50, 0.85);
+
+  /* ---- motion ---- */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --emph: cubic-bezier(0.2, 0, 0, 1);
+  --spring: cubic-bezier(0.32, 1.4, 0.4, 1);
+  --d1: 120ms;
+  --d2: 220ms;
+  --d3: 360ms;
+  --d4: 600ms;
+
+  /* ---- type ---- */
+  --display: "Unbounded", "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+  --body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* ---- layout ---- */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-height: 62px;
+  --gutter: 17px;
+}
+
+/* The app commits to one visual world: red on black, as the system specifies. */

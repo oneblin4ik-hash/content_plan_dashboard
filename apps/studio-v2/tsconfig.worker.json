@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "@cloudflare/workers-types",
+      "@cloudflare/vitest-pool-workers/types"
+    ]
+  },
+  "include": [
+    "worker",
+    "shared",
+    "db",
+    "tests"
+  ]
+}

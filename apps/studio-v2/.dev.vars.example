@@ -1,0 +1,4 @@
+# Скопируйте в .dev.vars для локального запуска. В Git не попадает.
+STUDIO_PASSPHRASE=придумайте-фразу
+AUTH_SECRET=длинная-случайная-строка
+GEMINI_API_KEY=ключ-из-google-ai-studio
