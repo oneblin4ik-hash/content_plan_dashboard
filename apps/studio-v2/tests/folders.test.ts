@@ -154,6 +154,75 @@ describe("идеи: фильтр, сортировка, корзина", () => {
     expect(list.ideas[0]?.title).toBe("Идея в избранное");
   });
 
+  /*
+   * Regression: the update schema used to be derived with `.partial()`, which
+   * leaves zod defaults in place. Every omitted field parsed to null, so one
+   * tap on the heart — the UI sends `{isFavorite}` alone — silently emptied
+   * the idea and dropped it out of its folder.
+   */
+  it("не стирает остальную идею, когда меняют одно поле", async () => {
+    const cookie = await login();
+    const folderId = await makeFolder(cookie, "Папка для сохранности");
+    const created = await call("/api/ideas", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        title: "Идея со всеми полями",
+        folderId,
+        hook: "Хук, который должен уцелеть",
+        format: "Миф",
+        angle: "Угол подачи",
+        visual: "Кадр у окна",
+        cta: "Сохрани",
+        objective: "сохранения",
+        channel: "telegram",
+        priority: "high",
+        segmentCode: "S2",
+      }),
+    });
+    const ideaId = (await json<{ id: number }>(created)).id;
+
+    await call(`/api/ideas/${ideaId}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ isFavorite: true }),
+    });
+
+    const list = await json<{ ideas: Idea[] }>(await call("/api/ideas", { cookie }));
+    const idea = list.ideas.find((entry) => entry.id === ideaId);
+    expect(idea).toBeDefined();
+    expect(idea?.isFavorite).toBe(true);
+    expect(idea?.hook).toBe("Хук, который должен уцелеть");
+    expect(idea?.format).toBe("Миф");
+    expect(idea?.angle).toBe("Угол подачи");
+    expect(idea?.visual).toBe("Кадр у окна");
+    expect(idea?.cta).toBe("Сохрани");
+    expect(idea?.objective).toBe("сохранения");
+    expect(idea?.channel).toBe("telegram");
+    expect(idea?.priority).toBe("high");
+    expect(idea?.segmentCode).toBe("S2");
+    expect(idea?.folderId).toBe(folderId);
+  });
+
+  it("всё ещё умеет очистить поле явным null", async () => {
+    const cookie = await login();
+    const created = await call("/api/ideas", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ title: "Идея с хуком", hook: "Хук на удаление" }),
+    });
+    const ideaId = (await json<{ id: number }>(created)).id;
+
+    await call(`/api/ideas/${ideaId}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ hook: null }),
+    });
+
+    const list = await json<{ ideas: Idea[] }>(await call("/api/ideas", { cookie }));
+    expect(list.ideas.find((entry) => entry.id === ideaId)?.hook).toBeNull();
+  });
+
   it("отклоняет слишком короткую тему", async () => {
     const cookie = await login();
     const response = await call("/api/ideas", {

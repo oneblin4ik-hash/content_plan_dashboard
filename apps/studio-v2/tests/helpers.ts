@@ -16,7 +16,7 @@ export async function migrate(): Promise<void> {
 }
 
 export async function reset(): Promise<void> {
-  for (const table of ["ideas", "drafts", "folders", "usage", "settings"]) {
+  for (const table of ["materials", "ideas", "drafts", "folders", "usage", "settings"]) {
     await testEnv.DB.exec(`DELETE FROM ${table}`);
   }
 }

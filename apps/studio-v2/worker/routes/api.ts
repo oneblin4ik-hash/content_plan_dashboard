@@ -8,18 +8,25 @@ import {
   ideaQuerySchema,
   ideaUpdateSchema,
   importSchema,
+  materialCreateSchema,
+  materialGenerateSchema,
+  materialQuerySchema,
+  materialUpdateSchema,
   saveDraftSchema,
   type Overview,
 } from "../../shared/types";
 import { segments, voice } from "../../shared/seed";
 import { dailyLimit, type Env } from "../env";
-import { generateIdeas, LlmError } from "../llm";
+import { generateIdeas, generateMaterial, LlmError } from "../llm";
 import {
   activeDraft,
   countIdeas,
+  countMaterials,
   createDb,
+  getMaterial,
   listFolders,
   listIdeas,
+  listMaterials,
   nowSeconds,
   purgeExpiredBin,
   readUsage,
@@ -52,13 +59,19 @@ function firstIssue(error: { issues: Array<{ message: string }> }): string {
 }
 
 async function buildOverview(db: Db, env: Env): Promise<Overview> {
-  const [folders, totals, used, draft] = await Promise.all([
+  const [folders, ideaTotals, materials, used, draft] = await Promise.all([
     listFolders(db),
     countIdeas(db),
+    countMaterials(db),
     readUsage(db),
     activeDraft(db),
   ]);
-  return { folders, totals, usage: { used, limit: dailyLimit(env) }, draft };
+  return {
+    folders,
+    totals: { ...ideaTotals, materials },
+    usage: { used, limit: dailyLimit(env) },
+    draft,
+  };
 }
 
 api.get("/overview", async (c) => c.json(await buildOverview(c.get("db"), c.env)));
@@ -288,6 +301,150 @@ api.delete("/drafts/:id", async (c) => {
 });
 
 /* ------------------------------ export / import --------------------------- */
+
+/* -------------------------------- materials ------------------------------- */
+
+api.get("/materials", async (c) => {
+  const parsed = materialQuerySchema.safeParse({
+    kind: c.req.query("kind") ?? "all",
+    status: c.req.query("status") ?? "all",
+    search: c.req.query("search") ?? "",
+    favoritesOnly: c.req.query("favoritesOnly") ?? false,
+  });
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+  return c.json(await listMaterials(c.get("db"), parsed.data));
+});
+
+api.get("/materials/:id", async (c) => {
+  const material = await getMaterial(c.get("db"), Number(c.req.param("id")));
+  if (!material) return c.json({ error: "Материал не найден." }, 404);
+  return c.json(material);
+});
+
+api.post("/materials", async (c) => {
+  const parsed = materialCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const [row] = await c
+    .get("db")
+    .insert(schema.materials)
+    .values({
+      ...parsed.data,
+      scenes: parsed.data.scenes ? JSON.stringify(parsed.data.scenes) : null,
+    })
+    .returning({ id: schema.materials.id });
+
+  return c.json({ id: row?.id ?? null }, 201);
+});
+
+api.patch("/materials/:id", async (c) => {
+  const parsed = materialUpdateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const { scenes, ...rest } = parsed.data;
+  const patch: Record<string, unknown> = { ...rest, updatedAt: nowSeconds() };
+  // `scenes` is absent when untouched and null when deliberately cleared, and
+  // the two must not collapse into one another on the way to the column.
+  if (scenes !== undefined) patch.scenes = scenes === null ? null : JSON.stringify(scenes);
+
+  const rows = await c
+    .get("db")
+    .update(schema.materials)
+    .set(patch)
+    .where(and(eq(schema.materials.id, Number(c.req.param("id"))), isNull(schema.materials.deletedAt)))
+    .returning({ id: schema.materials.id });
+
+  if (rows.length === 0) return c.json({ error: "Материал не найден." }, 404);
+  return c.json({ ok: true });
+});
+
+api.delete("/materials/:id", async (c) => {
+  const rows = await c
+    .get("db")
+    .update(schema.materials)
+    .set({ deletedAt: nowSeconds() })
+    .where(and(eq(schema.materials.id, Number(c.req.param("id"))), isNull(schema.materials.deletedAt)))
+    .returning({ id: schema.materials.id });
+
+  if (rows.length === 0) return c.json({ error: "Материал не найден." }, 404);
+  return c.json({ ok: true });
+});
+
+api.post("/materials/generate", async (c) => {
+  const parsed = materialGenerateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const db = c.get("db");
+  const input = parsed.data;
+
+  // An idea supplies both the topic and the angle the script has to keep.
+  let source: Parameters<typeof generateMaterial>[1]["source"] = null;
+  let topic = input.topic;
+  let segmentCode: string = input.segmentCode;
+
+  if (input.ideaId !== null) {
+    const [idea] = await db
+      .select()
+      .from(schema.ideas)
+      .where(and(eq(schema.ideas.id, input.ideaId), isNull(schema.ideas.deletedAt)))
+      .limit(1);
+    if (!idea) return c.json({ error: "Идея не найдена." }, 404);
+
+    topic = topic || idea.title;
+    segmentCode = idea.segmentCode;
+    source = { hook: idea.hook, format: idea.format, angle: idea.angle, visual: idea.visual, cta: idea.cta };
+  }
+
+  if (!topic.trim()) return c.json({ error: "Укажите тему материала." }, 400);
+
+  const limit = dailyLimit(c.env);
+  if (!(await reserveGeneration(db, limit))) {
+    return c.json({ error: `Дневной лимит генераций исчерпан (${limit}). Продолжим завтра.` }, 429);
+  }
+
+  let material;
+  try {
+    material = await generateMaterial(c.env, {
+      kind: input.kind,
+      topic,
+      segmentCode,
+      length: input.length,
+      goal: input.goal,
+      source,
+    });
+  } catch (error) {
+    await releaseGeneration(db);
+    const message =
+      error instanceof LlmError
+        ? error.message
+        : "Не удалось связаться с генератором. Попробуйте ещё раз.";
+    return c.json({ error: message }, 502);
+  }
+
+  /*
+   * Stored before the response goes out. A material costs a generation, and
+   * unlike an idea batch there is nothing to re-pick from — losing it to a
+   * closed tab would mean paying for it twice.
+   */
+  const [row] = await db
+    .insert(schema.materials)
+    .values({
+      ideaId: input.ideaId,
+      kind: input.kind,
+      segmentCode,
+      title: material.title,
+      hook: material.hook,
+      body: material.body || null,
+      scenes: material.scenes.length > 0 ? JSON.stringify(material.scenes) : null,
+      visual: material.visual || null,
+      cta: material.cta,
+    })
+    .returning({ id: schema.materials.id });
+
+  const saved = row ? await getMaterial(db, row.id) : null;
+  if (!saved) return c.json({ error: "Материал не удалось сохранить." }, 500);
+  return c.json(saved, 201);
+});
 
 api.get("/export", async (c) => {
   const db = c.get("db");

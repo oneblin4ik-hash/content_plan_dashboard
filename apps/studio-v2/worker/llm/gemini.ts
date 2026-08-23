@@ -3,32 +3,12 @@ import { LlmError } from "./index";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
-/** Mirrors the shape parseIdeas expects, so the model cannot drift. */
-const responseSchema = {
-  type: "OBJECT",
-  properties: {
-    ideas: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          title: { type: "STRING" },
-          hook: { type: "STRING" },
-          format: { type: "STRING" },
-          angle: { type: "STRING" },
-          visual: { type: "STRING" },
-          cta: { type: "STRING" },
-          channel: { type: "STRING", enum: ["telegram", "reels"] },
-          objective: { type: "STRING" },
-        },
-        required: ["title", "hook", "format", "angle", "visual", "cta", "channel", "objective"],
-      },
-    },
-  },
-  required: ["ideas"],
-};
-
-export async function callGemini(env: Env, system: string, user: string): Promise<string> {
+export async function callGemini(
+  env: Env,
+  system: string,
+  user: string,
+  responseSchema: unknown,
+): Promise<string> {
   const key = env.GEMINI_API_KEY;
   if (!key) {
     throw new LlmError("Ключ Gemini не настроен. Добавьте секрет GEMINI_API_KEY и попробуйте снова.");

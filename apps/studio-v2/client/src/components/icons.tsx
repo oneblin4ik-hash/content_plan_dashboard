@@ -160,3 +160,36 @@ export function IconBack({ size = 18 }: IconProps) {
     </svg>
   );
 }
+
+export function IconFilm({ size = 20 }: IconProps) {
+  return (
+    <svg {...frame(size)} {...base}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 4v16M17 4v16M3 12h18M3 8h4M3 16h4M17 8h4M17 16h4" />
+    </svg>
+  );
+}
+
+export function IconMessage({ size = 20 }: IconProps) {
+  return (
+    <svg {...frame(size)} {...base}>
+      <path d="M21 12a8 8 0 01-8 8H7l-4 3v-5.5A8 8 0 1121 12z" />
+    </svg>
+  );
+}
+
+export function IconWand({ size = 20 }: IconProps) {
+  return (
+    <svg {...frame(size)} {...base}>
+      <path d="M4 20L16 8M14 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2zM20 12l.7 1.4 1.4.7-1.4.7-.7 1.4-.7-1.4-1.4-.7 1.4-.7.7-1.4z" />
+    </svg>
+  );
+}
+
+export function IconLayers({ size = 20 }: IconProps) {
+  return (
+    <svg {...frame(size)} {...base}>
+      <path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5" />
+    </svg>
+  );
+}

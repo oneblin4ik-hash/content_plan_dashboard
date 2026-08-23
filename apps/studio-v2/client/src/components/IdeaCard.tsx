@@ -1,7 +1,7 @@
 import type { Folder, Idea } from "@shared/types";
 import { useTilt } from "../lib/motion";
 import { triggerHaptic } from "../lib/haptics";
-import { IconCopy, IconHeart, IconPencil, IconTrash } from "./icons";
+import { IconCopy, IconHeart, IconPencil, IconTrash, IconWand } from "./icons";
 
 const CHANNEL_LABEL: Record<string, string> = { telegram: "Telegram", reels: "Reels" };
 
@@ -34,6 +34,7 @@ export function IdeaCard({
   folder,
   onFavorite,
   onEdit,
+  onMakeMaterial,
   onDelete,
   onCopy,
 }: {
@@ -41,6 +42,7 @@ export function IdeaCard({
   folder: Folder | undefined;
   onFavorite: (idea: Idea) => void;
   onEdit: (idea: Idea) => void;
+  onMakeMaterial: (idea: Idea) => void;
   onDelete: (idea: Idea) => void;
   onCopy: (idea: Idea) => void;
 }) {
@@ -81,6 +83,16 @@ export function IdeaCard({
             }}
           >
             <IconHeart filled={idea.isFavorite} />
+          </button>
+          <button
+            className="icon-btn accent"
+            aria-label="Сделать материал"
+            onClick={() => {
+              triggerHaptic("navigation");
+              onMakeMaterial(idea);
+            }}
+          >
+            <IconWand />
           </button>
           <button className="icon-btn" aria-label="Скопировать" onClick={() => onCopy(idea)}>
             <IconCopy />
