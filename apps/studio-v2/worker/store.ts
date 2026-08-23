@@ -354,4 +354,31 @@ export async function countBin(db: Db): Promise<number> {
   return Number(ideaRow?.n ?? 0) + Number(materialRow?.n ?? 0);
 }
 
+/** D1 rejects any statement carrying more bound parameters than this. */
+export const D1_MAX_BOUND_PARAMS = 100;
+
+/**
+ * Inserts rows in batches that stay under D1's bound-parameter ceiling.
+ *
+ * Drizzle folds a multi-row insert into one statement and binds every column
+ * of every row, so the ceiling is reached far sooner than the row count
+ * suggests: eight ideas came to 104 parameters and the whole save failed with
+ * the draft already marked consumed. The batch size is measured from the
+ * statement drizzle actually builds, so adding a column cannot silently push
+ * it back over.
+ */
+export async function insertAll<Row>(
+  rows: Row[],
+  build: (batch: Row[]) => { toSQL(): { params: unknown[] } } & PromiseLike<unknown>,
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const perRow = build([rows[0] as Row]).toSQL().params.length || 1;
+  const size = Math.max(1, Math.floor(D1_MAX_BOUND_PARAMS / perRow));
+
+  for (let i = 0; i < rows.length; i += size) {
+    await build(rows.slice(i, i + size));
+  }
+}
+
 export { schema };

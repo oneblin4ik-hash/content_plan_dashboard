@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Folder, GeneratedIdea, Idea, Overview } from "../shared/types";
 import { buildPrompt, parseIdeas } from "../worker/llm";
-import { call, json, login, migrate, reset, testEnv } from "./helpers";
+import { createDb, D1_MAX_BOUND_PARAMS, insertAll, schema } from "../worker/store";
+import { call, json, login, makeFolder, migrate, reset, testEnv } from "./helpers";
 
 const realFetch = globalThis.fetch;
 
@@ -400,5 +401,104 @@ describe("снятая с обслуживания модель", () => {
     // A dead model must not burn the day's quota.
     const overview = await json<Overview>(await call("/api/overview", { cookie }));
     expect(overview.usage.used).toBe(0);
+  });
+});
+
+describe("предел связанных параметров D1", () => {
+  /*
+   * Regression: saving the largest batch built one INSERT with 104 bound
+   * parameters — D1 refuses anything past 100. The insert threw, the draft was
+   * already marked consumed, and a whole generation vanished: empty bank,
+   * spent quota, nothing to retry. Earlier tests used three ideas (39
+   * parameters) and never came near the ceiling.
+   *
+   * Asserted on the statements themselves rather than on the local database,
+   * which does not enforce the limit that production does.
+   */
+  it("ни один запрос вставки не выходит за сотню параметров", () => {
+    const db = createDb(testEnv.DB);
+    const row = {
+      folderId: 1,
+      segmentCode: "S2",
+      channel: "telegram" as const,
+      priority: "viral" as const,
+      title: "Тема",
+      hook: "хук",
+      format: "формат",
+      angle: "угол",
+      visual: "визуал",
+      cta: "призыв",
+      objective: "охват",
+      source: "generated" as const,
+    };
+
+    // The unbatched statement is what used to break; keep the proof visible.
+    const wholeBatch = db.insert(schema.ideas).values(Array(8).fill(row)).toSQL();
+    expect(wholeBatch.params.length).toBeGreaterThan(D1_MAX_BOUND_PARAMS);
+
+    const sizes: number[] = [];
+    void insertAll(Array(8).fill(row), (batch) => {
+      sizes.push(db.insert(schema.ideas).values(batch).toSQL().params.length);
+      return db.insert(schema.ideas).values(batch);
+    });
+    expect(sizes.length).toBeGreaterThan(1);
+    for (const size of sizes) expect(size).toBeLessThanOrEqual(D1_MAX_BOUND_PARAMS);
+  });
+
+  it("сохраняет все восемь идей — самый большой выбор", async () => {
+    const cookie = await login();
+    const folderId = await makeFolder(cookie, "Папка на восемь");
+    const batch = Array.from({ length: 8 }, (_, i) => idea(`Тема номер ${i + 1} про режим`, "telegram"));
+    mockGemini(batch);
+
+    const draft = await json<{ draftId: number }>(
+      await call("/api/generate", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify({ segmentCode: "S3", channel: "telegram", count: 8, folderId }),
+      }),
+    );
+
+    const saved = await call("/api/drafts/save", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ draftId: draft.draftId, indexes: [0, 1, 2, 3, 4, 5, 6, 7], folderId }),
+    });
+    expect(saved.status).toBe(200);
+    expect((await json<{ saved: number }>(saved)).saved).toBe(8);
+
+    const listed = await json<{ ideas: Idea[] }>(
+      await call(`/api/ideas?folderId=${folderId}`, { cookie }),
+    );
+    expect(listed.ideas).toHaveLength(8);
+  });
+
+  /*
+   * The draft has to survive a failed insert. Without that the ideas are lost
+   * for good: the app stops offering the draft and the generation is spent.
+   */
+  it("возвращает черновик, если вставка сорвалась", async () => {
+    const cookie = await login();
+    mockGemini([idea("Тема для сорванной вставки", "reels")]);
+
+    const draft = await json<{ draftId: number }>(
+      await call("/api/generate", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify({ segmentCode: "S3", channel: "reels", count: 3 }),
+      }),
+    );
+
+    // A folder that does not exist trips the foreign key inside the insert.
+    const failed = await call("/api/drafts/save", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ draftId: draft.draftId, indexes: [0], folderId: 999_999 }),
+    });
+    expect(failed.status).toBe(500);
+
+    // Offered again on the next open, rather than silently gone.
+    const overview = await json<Overview>(await call("/api/overview", { cookie }));
+    expect(overview.draft?.id).toBe(draft.draftId);
   });
 });

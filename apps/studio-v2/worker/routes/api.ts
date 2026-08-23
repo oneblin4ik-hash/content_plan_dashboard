@@ -28,6 +28,7 @@ import {
   listBin,
   listFolders,
   listIdeas,
+  insertAll,
   listMaterials,
   nowSeconds,
   parseScenes,
@@ -285,22 +286,35 @@ api.post("/drafts/save", async (c) => {
   }
 
   const folderId = parsed.data.folderId ?? draft.folderId;
-  await db.insert(schema.ideas).values(
-    chosen.map((idea) => ({
-      folderId,
-      segmentCode: draft.segmentCode,
-      channel: (idea.channel === "telegram" ? "telegram" : "reels") as "telegram" | "reels",
-      priority: "viral" as const,
-      title: idea.title ?? "",
-      hook: idea.hook ?? null,
-      format: idea.format ?? null,
-      angle: idea.angle ?? null,
-      visual: idea.visual ?? null,
-      cta: idea.cta ?? null,
-      objective: idea.objective ?? null,
-      source: "generated" as const,
-    })),
-  );
+  const values = chosen.map((idea) => ({
+    folderId,
+    segmentCode: draft.segmentCode,
+    channel: (idea.channel === "telegram" ? "telegram" : "reels") as "telegram" | "reels",
+    priority: "viral" as const,
+    title: idea.title ?? "",
+    hook: idea.hook ?? null,
+    format: idea.format ?? null,
+    angle: idea.angle ?? null,
+    visual: idea.visual ?? null,
+    cta: idea.cta ?? null,
+    objective: idea.objective ?? null,
+    source: "generated" as const,
+  }));
+
+  /*
+   * The draft is released again if the insert fails. Leaving it consumed once
+   * cost a whole generation: the ideas never landed, and the only copy of them
+   * was locked behind a draft the app would no longer offer.
+   */
+  try {
+    await insertAll(values, (batch) => db.insert(schema.ideas).values(batch));
+  } catch (error) {
+    await db
+      .update(schema.drafts)
+      .set({ consumedAt: null })
+      .where(eq(schema.drafts.id, draft.id));
+    throw error;
+  }
 
   return c.json({ saved: chosen.length, folderId });
 });
@@ -555,27 +569,25 @@ api.post("/import", async (c) => {
     (idea) => !duplicates.has(dedupeKey(idea.title, idea.createdAt)),
   );
 
-  for (let i = 0; i < fresh.length; i += 100) {
-    const chunk = fresh.slice(i, i + 100);
-    await db.insert(schema.ideas).values(
-      chunk.map((idea) => ({
-        folderId: idea.folderName ? (byName.get(idea.folderName) ?? null) : null,
-        segmentCode: idea.segmentCode ?? "S3",
-        channel: idea.channel ?? "reels",
-        priority: idea.priority ?? "medium",
-        title: idea.title,
-        hook: idea.hook ?? null,
-        format: idea.format ?? null,
-        angle: idea.angle ?? null,
-        visual: idea.visual ?? null,
-        cta: idea.cta ?? null,
-        objective: idea.objective ?? null,
-        source: idea.source,
-        isFavorite: idea.isFavorite,
-        createdAt: idea.createdAt,
-      })),
-    );
-  }
+  await insertAll(
+    fresh.map((idea) => ({
+      folderId: idea.folderName ? (byName.get(idea.folderName) ?? null) : null,
+      segmentCode: idea.segmentCode ?? "S3",
+      channel: idea.channel ?? "reels",
+      priority: idea.priority ?? "medium",
+      title: idea.title,
+      hook: idea.hook ?? null,
+      format: idea.format ?? null,
+      angle: idea.angle ?? null,
+      visual: idea.visual ?? null,
+      cta: idea.cta ?? null,
+      objective: idea.objective ?? null,
+      source: idea.source,
+      isFavorite: idea.isFavorite,
+      createdAt: idea.createdAt,
+    })),
+    (batch) => db.insert(schema.ideas).values(batch),
+  );
 
   // Materials dedupe on the same title-and-timestamp key as ideas, so
   // re-importing a file stays safe rather than doubling the library.
@@ -596,27 +608,25 @@ api.post("/import", async (c) => {
     (material) => !materialDuplicates.has(dedupeKey(material.title, material.createdAt)),
   );
 
-  for (let i = 0; i < freshMaterials.length; i += 100) {
-    const chunk = freshMaterials.slice(i, i + 100);
-    await db.insert(schema.materials).values(
-      chunk.map((material) => ({
-        // No ideaId: identifiers differ in a fresh database and a material
-        // stands on its own.
-        ideaId: null,
-        kind: material.kind,
-        segmentCode: material.segmentCode,
-        status: material.status,
-        title: material.title,
-        hook: material.hook,
-        body: material.body,
-        scenes: material.scenes ? JSON.stringify(material.scenes) : null,
-        visual: material.visual,
-        cta: material.cta,
-        isFavorite: material.isFavorite,
-        createdAt: material.createdAt,
-      })),
-    );
-  }
+  await insertAll(
+    freshMaterials.map((material) => ({
+      // No ideaId: identifiers differ in a fresh database and a material
+      // stands on its own.
+      ideaId: null,
+      kind: material.kind,
+      segmentCode: material.segmentCode,
+      status: material.status,
+      title: material.title,
+      hook: material.hook,
+      body: material.body,
+      scenes: material.scenes ? JSON.stringify(material.scenes) : null,
+      visual: material.visual,
+      cta: material.cta,
+      isFavorite: material.isFavorite,
+      createdAt: material.createdAt,
+    })),
+    (batch) => db.insert(schema.materials).values(batch),
+  );
 
   return c.json({
     addedFolders,
