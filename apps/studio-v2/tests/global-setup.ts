@@ -35,7 +35,8 @@ function assertRootConfigMatches(): void {
   };
 
   for (const key of ["name", "main", "compatibility_date", "compatibility_flags",
-                     "assets", "d1_databases", "vars", "observability"] as const) {
+                     "workers_dev", "assets", "d1_databases", "vars",
+                     "observability"] as const) {
     const expected = JSON.stringify(rebased[key]);
     const actual = JSON.stringify(root[key]);
     if (expected !== actual) {
@@ -54,6 +55,7 @@ interface WranglerConfig {
   main: string;
   compatibility_date: string;
   compatibility_flags: string[];
+  workers_dev: boolean;
   assets: { directory: string; binding: string; not_found_handling: string };
   d1_databases: Array<{
     binding: string;

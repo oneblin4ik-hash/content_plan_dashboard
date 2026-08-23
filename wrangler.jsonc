@@ -13,6 +13,10 @@
 {
   "$schema": "apps/studio-v2/node_modules/wrangler/config-schema.json",
   "name": "crimson-studio",
+  // Воркер создан мастером импорта, и адрес на workers.dev у него оказался
+  // выключен: деплой проходил, а страница отдавала 404 и error code 1042.
+  // Указано явно, чтобы каждая выкладка включала адрес заново.
+  "workers_dev": true,
   "main": "apps/studio-v2/worker/index.ts",
   "compatibility_date": "2025-10-01",
   "compatibility_flags": ["nodejs_compat"],
