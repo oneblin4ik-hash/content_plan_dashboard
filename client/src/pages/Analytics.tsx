@@ -1,327 +1,1716 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
-import { Eye, TrendingUp, CheckCircle2, Clock } from "lucide-react";
-import { allContentTopics } from "@/lib/contentData";
+import {
+  Brain,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  Loader2,
+  Users,
+  BarChart3,
+  RefreshCw,
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  Send,
+  Youtube,
+  Instagram,
+} from "lucide-react";
+import { toast } from "sonner";
+import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { CostBadge } from "@/components/CostBadge";
+
+/* Раздел /analytics состоит из двух табов:
+   - «Конкуренты» — публичный парсинг TG + YouTube + AI-анализ
+     (что работает у конкурента, как использовать у себя)
+   - «Мои публикации» — ручной ввод метрик постов + AI-инсайты
+     (бывшая RealMetricsSection) */
+type AnalyticsTab = "competitors" | "self";
 
 export default function Analytics() {
-  const [publishedTopics, setPublishedTopics] = useState<Record<number, boolean>>({});
-  const [viewStats, setViewStats] = useState<Record<number, number>>({});
-  const [engagementStats, setEngagementStats] = useState<Record<number, number>>({});
-
-  const handleTogglePublished = (id: number) => {
-    setPublishedTopics(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  const handleViewsChange = (id: number, views: string) => {
-    setViewStats(prev => ({
-      ...prev,
-      [id]: parseInt(views) || 0
-    }));
-  };
-
-  const handleEngagementChange = (id: number, engagement: string) => {
-    setEngagementStats(prev => ({
-      ...prev,
-      [id]: parseFloat(engagement) || 0
-    }));
-  };
-
-  const publishedCount = Object.values(publishedTopics).filter(Boolean).length;
-  const totalViews = Object.values(viewStats).reduce((a, b) => a + b, 0);
-  const avgEngagement = Object.values(engagementStats).length > 0
-    ? (Object.values(engagementStats).reduce((a, b) => a + b, 0) / Object.values(engagementStats).length).toFixed(2)
-    : "0.00";
-
-  // Data for charts
-  const chartData = allContentTopics
-    .filter(topic => publishedTopics[topic.id])
-    .map(topic => ({
-      name: topic.title.substring(0, 20) + "...",
-      views: viewStats[topic.id] || 0,
-      engagement: engagementStats[topic.id] || 0
-    }));
-
-  const performanceData = [
-    { name: "Опубликовано", value: publishedCount },
-    { name: "В очереди", value: allContentTopics.length - publishedCount }
-  ];
-
+  const [tab, setTab] = useState<AnalyticsTab>("competitors");
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-border shadow-sm">
-        <div className="container py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-                Трекер Выполнения
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Отслеживание опубликованного контента и статистики просмотров
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <TrendingUp className="w-12 h-12 text-primary opacity-70" />
-            </div>
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      <header style={{ padding: "56px 0 8px" }}>
+        <div className="container">
+          <div className="eyebrow" style={{ marginBottom: 14 }}>
+            Аналитика
+          </div>
+          <h1>
+            Что{" "}
+            <span style={{ color: "var(--brand-gold)" }}>работает.</span>
+          </h1>
+          <p
+            className="text-platinum"
+            style={{
+              maxWidth: 620,
+              fontSize: 18,
+              lineHeight: 1.5,
+              marginTop: 18,
+            }}
+          >
+            {tab === "competitors"
+              ? "Парсим публичные каналы конкурентов в фитнес-нише и просим AI разобрать, какой контент у них залетает и как это использовать."
+              : "Заноси цифры после публикации — AI разберёт, какие темы, форматы и хуки реально зашли твоей аудитории."}
+          </p>
+
+          <div
+            style={{
+              marginTop: 28,
+              display: "inline-flex",
+              gap: 4,
+              padding: 4,
+              background: "var(--ink-2)",
+              borderRadius: 9999,
+            }}
+          >
+            <TabBtn
+              active={tab === "competitors"}
+              onClick={() => setTab("competitors")}
+              icon={<Users className="w-4 h-4" />}
+              label="Конкуренты"
+            />
+            <TabBtn
+              active={tab === "self"}
+              onClick={() => setTab("self")}
+              icon={<BarChart3 className="w-4 h-4" />}
+              label="Мои публикации"
+            />
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container py-8">
-        {/* Stats Overview */}
-        <div className="grid gap-4 md:grid-cols-4 mb-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Опубликовано
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-primary">{publishedCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">из {allContentTopics.length} тем</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Всего просмотров
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-primary">{totalViews.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground mt-1">по всем постам</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Средний Engagement
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-primary">{avgEngagement}%</div>
-              <p className="text-xs text-muted-foreground mt-1">средний показатель</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                В очереди
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-orange-600">
-                {allContentTopics.length - publishedCount}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">ожидают публикации</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts */}
-        {chartData.length > 0 && (
-          <div className="grid gap-6 md:grid-cols-2 mb-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>Просмотры по постам</CardTitle>
-                <CardDescription>Статистика просмотров опубликованного контента</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="views" fill="#d97706" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Engagement Rate</CardTitle>
-                <CardDescription>Уровень взаимодействия аудитории</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="engagement" stroke="#d97706" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Topics Tracker */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Трекер тем контента</CardTitle>
-            <CardDescription>Отметьте опубликованные темы и добавьте статистику</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {allContentTopics.map((topic) => (
-                <div
-                  key={topic.id}
-                  className="flex items-start gap-4 p-4 border border-border rounded-lg hover:bg-secondary/30 transition-colors"
-                >
-                  <div className="flex items-center gap-2 pt-1">
-                    <Checkbox
-                      id={`topic-${topic.id}`}
-                      checked={publishedTopics[topic.id] || false}
-                      onCheckedChange={() => handleTogglePublished(topic.id)}
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <label
-                      htmlFor={`topic-${topic.id}`}
-                      className={`font-semibold cursor-pointer ${
-                        publishedTopics[topic.id] ? "line-through text-muted-foreground" : "text-foreground"
-                      }`}
-                    >
-                      {topic.title}
-                    </label>
-                    <p className="text-sm text-muted-foreground mt-1">{topic.reason}</p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      <Badge variant="outline">{topic.format}</Badge>
-                      <Badge className={topic.potential === "Вирусный" ? "bg-red-100 text-red-800" : "bg-orange-100 text-orange-800"}>
-                        {topic.potential}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {publishedTopics[topic.id] && (
-                    <div className="flex gap-3 flex-col sm:flex-row">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs font-medium text-muted-foreground">Просмотры</label>
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          value={viewStats[topic.id] || ""}
-                          onChange={(e) => handleViewsChange(topic.id, e.target.value)}
-                          className="w-24 h-8 text-sm"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs font-medium text-muted-foreground">Engagement %</label>
-                        <Input
-                          type="number"
-                          placeholder="0.00"
-                          step="0.01"
-                          value={engagementStats[topic.id] || ""}
-                          onChange={(e) => handleEngagementChange(topic.id, e.target.value)}
-                          className="w-24 h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {publishedTopics[topic.id] && (
-                    <div className="flex items-center gap-1 text-green-600 pt-1">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Summary Stats */}
-        <div className="grid gap-4 md:grid-cols-3 mt-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                Лучший пост
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {chartData.length > 0 ? (
-                <div>
-                  <p className="text-lg font-bold text-primary">
-                    {Math.max(...chartData.map(d => d.views)).toLocaleString()} просмотров
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {chartData.find(d => d.views === Math.max(...chartData.map(d => d.views)))?.name}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-muted-foreground">Нет опубликованных постов</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                Лучший Engagement
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {chartData.length > 0 ? (
-                <div>
-                  <p className="text-lg font-bold text-primary">
-                    {Math.max(...chartData.map(d => d.engagement)).toFixed(2)}%
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {chartData.find(d => d.engagement === Math.max(...chartData.map(d => d.engagement)))?.name}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-muted-foreground">Нет опубликованных постов</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Прогресс
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div>
-                <p className="text-lg font-bold text-primary">
-                  {Math.round((publishedCount / allContentTopics.length) * 100)}%
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {publishedCount} из {allContentTopics.length} тем
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-secondary/50 mt-12">
-        <div className="container py-8 text-center text-sm text-muted-foreground">
-          <p>Трекер выполнения контента • Отслеживай ROI каждого поста</p>
-        </div>
-      </footer>
+      {tab === "competitors" ? <CompetitorsSection /> : <RealMetricsSection />}
     </div>
   );
+}
+
+function TabBtn({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "8px 16px",
+        borderRadius: 9999,
+        border: 0,
+        fontFamily: "var(--font-body)",
+        fontSize: 13,
+        fontWeight: 600,
+        background: active ? "var(--brand-gold)" : "transparent",
+        color: active ? "var(--ink)" : "var(--brand-platinum)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+/* ============================================================
+   Конкуренты — парсинг TG/YT + per-канал AI-отчёт.
+   Таблица из карточек: подписчики, средние просмотры, что особенного,
+   что залетает, как использовать.
+   ============================================================ */
+function CompetitorsSection() {
+  const { workspaceKey, cloudEnabled } = useWorkspace();
+  const [, navigate] = useLocation();
+  const list = trpc.competitors.list.useQuery(undefined, {
+    enabled: cloudEnabled,
+  });
+  const refresh = trpc.competitors.refresh.useMutation({
+    onSuccess: (r) => {
+      list.refetch();
+      toast.success(`Обновил ${r.okCount} из ${r.total} каналов`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const analyze = trpc.competitors.analyze.useMutation({
+    onSuccess: () => {
+      list.refetch();
+      toast.success("AI-отчёт готов");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const addChannel = trpc.competitors.add.useMutation({
+    onSuccess: (r) => {
+      list.refetch();
+      if (r.status === "ok") {
+        toast.success(`@${r.handle} добавлен — ${r.postCount} постов`);
+      } else {
+        /* Показываем конкретную подсказку с сервера (например, для YT
+           «вставь channel_id»), а не сухой код статуса. */
+        toast.error(r.error || `Не удалось получить посты (${r.status})`, {
+          duration: 7000,
+        });
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const removeChannel = trpc.competitors.remove.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+
+  const [newHandle, setNewHandle] = useState("");
+  const [newPlatform, setNewPlatform] = useState<"tg" | "yt" | "ig">("tg");
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+  if (!cloudEnabled) {
+    return (
+      <section className="container py-12">
+        <div className="bento-card" style={{ padding: 24 }}>
+          <p className="text-platinum">
+            Включи синхронизацию в Настройках, чтобы видеть конкурентов и
+            сохранять отчёты.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const channels = list.data ?? [];
+  const okCount = channels.filter((c) => c.status === "ok").length;
+
+  const handleAdd = () => {
+    /* Передаём сырой ввод — сервер сам нормализует @handle / ссылку /
+       channel_id под платформу (normalizeHandle в competitors router). */
+    const raw = newHandle.trim();
+    if (!raw) return;
+    addChannel.mutate({ platform: newPlatform, handle: raw });
+    setNewHandle("");
+  };
+
+  return (
+    <section style={{ padding: "16px 0 96px" }}>
+      <div className="container">
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: 18,
+          }}
+        >
+          <button
+            onClick={() => refresh.mutate({})}
+            disabled={refresh.isPending}
+            className="btn-gold gold-glow"
+            style={{ padding: "12px 22px", fontSize: 14 }}
+          >
+            {refresh.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Парсю каналы...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" /> Обновить все
+              </>
+            )}
+          </button>
+          {channels.length > 0 && (
+            <span
+              className="text-platinum"
+              style={{ fontSize: 13, opacity: 0.7 }}
+            >
+              {channels.length} каналов · {okCount} рабочих
+            </span>
+          )}
+        </div>
+
+        {/* Форма добавить */}
+        <div
+          className="bento-card"
+          style={{ padding: 16, marginBottom: 18 }}
+        >
+          <div className="flex gap-2 items-center" style={{ flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                gap: 2,
+                padding: 3,
+                background: "var(--ink-3)",
+                borderRadius: 9999,
+              }}
+            >
+              <PlatformChip
+                active={newPlatform === "tg"}
+                onClick={() => setNewPlatform("tg")}
+                icon={<Send className="w-3.5 h-3.5" />}
+                label="Telegram"
+              />
+              <PlatformChip
+                active={newPlatform === "yt"}
+                onClick={() => setNewPlatform("yt")}
+                icon={<Youtube className="w-3.5 h-3.5" />}
+                label="YouTube"
+              />
+              <PlatformChip
+                active={newPlatform === "ig"}
+                onClick={() => setNewPlatform("ig")}
+                icon={<Instagram className="w-3.5 h-3.5" />}
+                label="Instagram"
+              />
+            </div>
+            <input
+              value={newHandle}
+              onChange={(e) => setNewHandle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              placeholder={
+                newPlatform === "tg"
+                  ? "@channel или t.me/channel"
+                  : newPlatform === "yt"
+                    ? "@handle, youtube.com/@handle или channel_id (UC…)"
+                    : "@username или instagram.com/username"
+              }
+              style={{
+                flex: 1,
+                minWidth: 200,
+                background: "var(--ink-3)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 9999,
+                padding: "10px 16px",
+                fontSize: 14,
+              }}
+            />
+            <button
+              onClick={handleAdd}
+              disabled={addChannel.isPending || !newHandle.trim()}
+              className="btn-gold"
+              style={{ padding: "10px 18px" }}
+            >
+              {addChannel.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Добавить
+            </button>
+          </div>
+        </div>
+
+        {/* Таблица карточек */}
+        {list.isLoading ? (
+          <div className="text-platinum" style={{ fontSize: 14 }}>
+            <Loader2
+              className="w-4 h-4 animate-spin"
+              style={{ display: "inline", marginRight: 8 }}
+            />
+            Загружаю...
+          </div>
+        ) : channels.length === 0 ? (
+          <div className="bento-card" style={{ padding: 24 }}>
+            <p className="text-platinum">
+              Пусто. Добавь канал выше или нажми «Обновить все», чтобы
+              начать.
+            </p>
+          </div>
+        ) : (
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+            }}
+          >
+            {channels.map((c) => (
+              <CompetitorCard
+                key={c.id}
+                channel={c}
+                onAnalyze={() => {
+                  setAnalyzingId(c.id);
+                  analyze.mutate(
+                    { id: c.id },
+                    { onSettled: () => setAnalyzingId(null) },
+                  );
+                }}
+                onRemove={() => removeChannel.mutate({ id: c.id })}
+                isAnalyzing={
+                  analyze.isPending && analyzingId === c.id
+                }
+                onUseRecommendation={(rec) => {
+                  /* Deep-link в Студию с темой, собранной из имени
+                     конкурента и текста рекомендации. Промпт через
+                     callLLM уже подмешивает полные рекомендации, так
+                     что здесь нужен только осмысленный заголовок. */
+                  const trimmed = rec.length > 80 ? `${rec.slice(0, 80)}…` : rec;
+                  const title = `По мотивам @${c.handle}: ${trimmed}`;
+                  navigate(
+                    `/generator?title=${encodeURIComponent(title)}&mode=post`,
+                  );
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlatformChip({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 9999,
+        border: 0,
+        background: active ? "var(--brand-gold)" : "transparent",
+        color: active ? "var(--ink)" : "var(--brand-platinum)",
+        fontFamily: "var(--font-body)",
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+type CompetitorChannel = {
+  id: string;
+  platform: "tg" | "yt" | "ig";
+  handle: string;
+  title: string | null;
+  subscribers: number | null;
+  avgViews: number | null;
+  bio: string | null;
+  samplePosts: Array<{ text: string; views?: number; url?: string }>;
+  analysis: {
+    niche_summary: string;
+    what_works: string[];
+    content_formats: string[];
+    hook_patterns: string[];
+    recommendations_for_serbolin: string[];
+  } | null;
+  status: string;
+  lastSyncedAt: number | null;
+  lastAnalyzedAt: number | null;
+  lastError: string | null;
+};
+
+function CompetitorCard({
+  channel,
+  onAnalyze,
+  onRemove,
+  isAnalyzing,
+  onUseRecommendation,
+}: {
+  channel: CompetitorChannel;
+  onAnalyze: () => void;
+  onRemove: () => void;
+  isAnalyzing: boolean;
+  onUseRecommendation: (rec: string) => void;
+}) {
+  const platformIcon =
+    channel.platform === "tg" ? (
+      <Send className="w-3.5 h-3.5" />
+    ) : channel.platform === "yt" ? (
+      <Youtube className="w-3.5 h-3.5" />
+    ) : (
+      <Instagram className="w-3.5 h-3.5" />
+    );
+  const platformUrl =
+    channel.platform === "tg"
+      ? `https://t.me/${channel.handle}`
+      : channel.platform === "yt"
+        ? /^UC[\w-]{20,24}$/.test(channel.handle)
+          ? `https://www.youtube.com/channel/${channel.handle}`
+          : `https://www.youtube.com/@${channel.handle}`
+        : `https://www.instagram.com/${channel.handle}`;
+  const isOk = channel.status === "ok";
+
+  return (
+    <div
+      className="bento-card"
+      style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}
+    >
+      <div
+        className="flex items-start justify-between"
+        style={{ gap: 12 }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            className="flex items-center"
+            style={{ gap: 6, marginBottom: 6, fontSize: 11 }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 8px",
+                borderRadius: 9999,
+                background:
+                  channel.platform === "tg"
+                    ? "rgba(34,158,217,0.12)"
+                    : "rgba(255,0,0,0.12)",
+                color: channel.platform === "tg" ? "#229ED9" : "#ff4d4d",
+                fontWeight: 700,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+              }}
+            >
+              {platformIcon}
+              {channel.platform === "tg" ? "Telegram" : "YouTube"}
+            </span>
+            <span
+              style={{
+                color: isOk ? "#3ecf8e" : "var(--muted-foreground)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              {isOk ? (
+                <CheckCircle2 className="w-3 h-3" />
+              ) : (
+                <AlertCircle className="w-3 h-3" />
+              )}
+              {isOk ? "активен" : channel.status}
+            </span>
+          </div>
+          <h3
+            style={{
+              fontSize: 18,
+              letterSpacing: "-0.3px",
+              lineHeight: 1.25,
+              marginBottom: 4,
+            }}
+          >
+            <a
+              href={platformUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "inherit", textDecoration: "none" }}
+            >
+              {channel.title || `@${channel.handle}`}
+            </a>
+          </h3>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--muted-foreground)",
+            }}
+          >
+            @{channel.handle}
+          </div>
+        </div>
+        <button
+          onClick={onRemove}
+          title="Удалить из списка"
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "var(--muted-foreground)",
+            cursor: "pointer",
+            padding: 4,
+            lineHeight: 0,
+          }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Метрики */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <Stat
+          label="Подписчики"
+          value={
+            channel.subscribers
+              ? channel.subscribers.toLocaleString("ru-RU")
+              : "—"
+          }
+        />
+        <Stat
+          label={
+            channel.platform === "yt" ? "Среднее видео" : "Средний пост"
+          }
+          value={
+            channel.avgViews
+              ? channel.avgViews.toLocaleString("ru-RU")
+              : "—"
+          }
+          suffix={channel.avgViews ? "просмотров" : undefined}
+        />
+      </div>
+
+      {channel.bio && (
+        <p
+          style={{
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--brand-platinum)",
+            padding: 10,
+            background: "var(--ink-3)",
+            borderRadius: 10,
+            margin: 0,
+          }}
+        >
+          {channel.bio}
+        </p>
+      )}
+
+      {/* AI-отчёт */}
+      {channel.analysis ? (
+        <div
+          style={{
+            padding: 12,
+            background: "rgba(212,168,67,0.06)",
+            border: "1px solid rgba(212,168,67,0.2)",
+            borderRadius: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          <ReportRow
+            label="Ниша"
+            value={channel.analysis.niche_summary}
+          />
+          <ReportList
+            label="Что залетает"
+            items={channel.analysis.what_works}
+          />
+          <ReportList
+            label="Форматы"
+            items={channel.analysis.content_formats}
+            inline
+          />
+          <ReportList
+            label="Паттерны хуков"
+            items={channel.analysis.hook_patterns}
+          />
+          <ReportList
+            label="Как использовать"
+            items={channel.analysis.recommendations_for_serbolin}
+            accent
+            onItemAction={onUseRecommendation}
+            itemActionLabel="Сделать пост по этой рекомендации"
+          />
+          {channel.lastAnalyzedAt && (
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--muted-foreground)",
+                marginTop: 4,
+              }}
+            >
+              Отчёт от{" "}
+              {new Date(channel.lastAnalyzedAt).toLocaleString("ru-RU")}
+            </div>
+          )}
+        </div>
+      ) : isOk ? (
+        <div
+          className="text-platinum"
+          style={{ fontSize: 12, opacity: 0.7 }}
+        >
+          Спарсили {channel.samplePosts.length}{" "}
+          {channel.platform === "yt" ? "видео" : "постов"}. Жми
+          «Разобрать», чтобы AI выдал отчёт.
+        </div>
+      ) : (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#ff9a7a",
+          }}
+        >
+          Канал недоступен публично или не существует. Можно удалить из
+          списка.
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={onAnalyze}
+          disabled={!isOk || isAnalyzing || channel.samplePosts.length < 3}
+          className="btn-gold"
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            padding: "10px 14px",
+            fontSize: 13,
+          }}
+        >
+          {isAnalyzing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Анализирую...
+            </>
+          ) : (
+            <>
+              <Brain className="w-4 h-4" />
+              {channel.analysis ? "Переанализировать" : "Разобрать"}
+              <CostBadge action="analyzeChannel" />
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--ink-2)",
+        borderRadius: 10,
+        padding: "8px 12px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: 1.4,
+          color: "var(--muted-foreground)",
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "#fff" }}>
+        {value}
+        {suffix && (
+          <span
+            style={{
+              fontSize: 9,
+              color: "var(--muted-foreground)",
+              marginLeft: 4,
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+            }}
+          >
+            {suffix}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        className="eyebrow"
+        style={{ fontSize: 10, marginBottom: 4 }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: "#fff",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ReportList({
+  label,
+  items,
+  accent,
+  inline,
+  onItemAction,
+  itemActionLabel,
+}: {
+  label: string;
+  items: string[];
+  accent?: boolean;
+  inline?: boolean;
+  /* Опциональная per-item кнопка справа от пункта (для рекомендаций
+     конкурентов — «Сделать пост по этому»). */
+  onItemAction?: (item: string) => void;
+  itemActionLabel?: string;
+}) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      <div
+        className="eyebrow"
+        style={{
+          fontSize: 10,
+          marginBottom: 4,
+          color: accent ? "var(--brand-gold)" : undefined,
+        }}
+      >
+        {label}
+      </div>
+      {inline ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {items.map((it, i) => (
+            <span
+              key={i}
+              style={{
+                fontSize: 11,
+                padding: "3px 10px",
+                borderRadius: 9999,
+                background: "var(--ink-2)",
+                color: "#fff",
+              }}
+            >
+              {it}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 18,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: accent ? "var(--brand-gold)" : "var(--brand-platinum)",
+          }}
+        >
+          {items.map((it, i) => (
+            <li key={i} style={{ marginBottom: 6 }}>
+              {it}
+              {onItemAction && (
+                <button
+                  onClick={() => onItemAction(it)}
+                  title={itemActionLabel ?? "Сделать пост по этому"}
+                  style={{
+                    marginLeft: 6,
+                    background: "rgba(212,168,67,0.18)",
+                    border: "1px solid rgba(212,168,67,0.4)",
+                    color: "var(--brand-gold)",
+                    padding: "2px 8px",
+                    borderRadius: 9999,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    letterSpacing: 0.4,
+                    verticalAlign: "middle",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  В пост
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+
+/* ============================================================
+   Реальная аналитика по публикациям + AI-инсайты (идея #5).
+   Хранит метрики в D1, ска́упится workspace-key'ом.
+   ============================================================ */
+
+type LocalMetricForm = {
+  postTitle: string;
+  postType: "post" | "reels" | "carousel" | "story" | "other";
+  platform: "telegram" | "instagram" | "youtube" | "other";
+  topic: string;
+  publishedDate: string;
+  views: string;
+  reactions: string;
+  comments: string;
+  saves: string;
+  shares: string;
+  notes: string;
+};
+
+const EMPTY_FORM: LocalMetricForm = {
+  postTitle: "",
+  postType: "post",
+  platform: "telegram",
+  topic: "",
+  publishedDate: new Date().toISOString().slice(0, 10),
+  views: "",
+  reactions: "",
+  comments: "",
+  saves: "",
+  shares: "",
+  notes: "",
+};
+
+function RealMetricsSection() {
+  const { workspaceKey, cloudEnabled } = useWorkspace();
+  const list = trpc.metrics.list.useQuery(
+    { limit: 100 },
+    { enabled: !!workspaceKey && cloudEnabled },
+  );
+  const add = trpc.metrics.add.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+  const del = trpc.metrics.delete.useMutation({
+    onSuccess: () => list.refetch(),
+  });
+  const insights = trpc.metrics.insights.useMutation();
+
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<LocalMetricForm>(EMPTY_FORM);
+  const [windowDays, setWindowDays] = useState(30);
+
+  /* Inline-правка цифр метрики: при клике на иконку карандаша в
+     строке таблицы — открывается редактор всех counter'ов + notes. */
+  const update = trpc.metrics.update.useMutation({
+    onSuccess: () => list.refetch(),
+    onError: (e) => toast.error(e.message),
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    views: "",
+    reactions: "",
+    comments: "",
+    saves: "",
+    shares: "",
+    notes: "",
+  });
+
+  if (!cloudEnabled) {
+    return (
+      <section className="container py-12">
+        <div
+          className="bento-card"
+          style={{
+            padding: 28,
+            borderLeft: "3px solid var(--brand-gold)",
+          }}
+        >
+          <div className="eyebrow" style={{ marginBottom: 8 }}>
+            <Brain className="w-3.5 h-3.5 inline mr-1.5" />
+            AI-аналитика
+          </div>
+          <h3 style={{ fontSize: 22, marginBottom: 6 }}>
+            Включи sync — и сюда подтянется реальная статистика
+          </h3>
+          <p className="text-platinum" style={{ fontSize: 14 }}>
+            Раздел работает по workspace key (как библиотека и медиа-банк).
+            Открой «Sync» в навигации, чтобы привязать рабочее пространство.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const items = list.data ?? [];
+
+  return (
+    <section className="container py-12">
+      <div style={{ marginBottom: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>
+          <Brain className="w-3.5 h-3.5 inline mr-1.5" />
+          AI-аналитика
+        </div>
+        <h2 style={{ fontSize: 36, letterSpacing: "-0.5px", marginBottom: 8 }}>
+          Реальные{" "}
+          <span style={{ color: "var(--brand-gold)" }}>метрики</span> и
+          инсайты
+        </h2>
+        <p
+          className="text-platinum"
+          style={{ fontSize: 15, maxWidth: 720 }}
+        >
+          Заноси цифры после публикации — views, реакции, комменты, сохранения.
+          Когда наберётся 5-10 постов, жми «Получить AI-инсайты», и Gemini
+          даст разбор: что зашло, что слили, что повторять следующие 7 дней.
+        </p>
+      </div>
+
+      {/* Add form */}
+      <div style={{ marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="btn-gold gold-glow"
+          style={{ padding: "10px 18px", fontSize: 14 }}
+        >
+          <Plus className="w-4 h-4" />
+          {showForm ? "Закрыть форму" : "Добавить публикацию"}
+        </button>
+        <select
+          value={windowDays}
+          onChange={(e) => setWindowDays(Number(e.target.value))}
+          style={{
+            background: "var(--ink-3)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 14,
+            padding: "10px 14px",
+            fontSize: 13,
+          }}
+        >
+          <option value={7}>За 7 дней</option>
+          <option value={14}>За 14 дней</option>
+          <option value={30}>За 30 дней</option>
+          <option value={60}>За 60 дней</option>
+          <option value={90}>За 90 дней</option>
+        </select>
+        <button
+          onClick={() => {
+            if (!workspaceKey) return;
+            insights.mutate({ windowDays });
+          }}
+          disabled={insights.isPending || items.length < 3}
+          className="btn-gold"
+          style={{
+            background: "var(--ink-2)",
+            color: "#fff",
+            padding: "10px 18px",
+            fontSize: 14,
+          }}
+          title={items.length < 3 ? "Нужно минимум 3 публикации" : "Запустить разбор"}
+        >
+          {insights.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Думаю...
+            </>
+          ) : (
+            <>
+              <Brain className="w-4 h-4" /> Получить AI-инсайты
+              <CostBadge action="insights" />
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Сводный дашборд + график — появляется, когда есть данные. */}
+      {items.length > 0 && <MetricsSummary items={items} />}
+
+      {showForm && (
+        <div className="bento-card" style={{ padding: 20, marginBottom: 24 }}>
+          <div className="grid gap-3 md:grid-cols-3">
+            <input
+              type="text"
+              value={form.postTitle}
+              onChange={(e) => setForm({ ...form, postTitle: e.target.value })}
+              placeholder="Заголовок поста *"
+              style={metricInputStyle}
+            />
+            <select
+              value={form.postType}
+              onChange={(e) =>
+                setForm({ ...form, postType: e.target.value as LocalMetricForm["postType"] })
+              }
+              style={metricInputStyle}
+            >
+              <option value="post">Пост</option>
+              <option value="reels">Reels</option>
+              <option value="carousel">Карусель</option>
+              <option value="story">Stories</option>
+              <option value="other">Другое</option>
+            </select>
+            <select
+              value={form.platform}
+              onChange={(e) =>
+                setForm({ ...form, platform: e.target.value as LocalMetricForm["platform"] })
+              }
+              style={metricInputStyle}
+            >
+              <option value="telegram">Telegram</option>
+              <option value="instagram">Instagram</option>
+              <option value="youtube">YouTube</option>
+              <option value="other">Другое</option>
+            </select>
+            <input
+              type="text"
+              value={form.topic}
+              onChange={(e) => setForm({ ...form, topic: e.target.value })}
+              placeholder="Тема (напр. ягодицы, питание)"
+              style={metricInputStyle}
+            />
+            <input
+              type="date"
+              value={form.publishedDate}
+              onChange={(e) => setForm({ ...form, publishedDate: e.target.value })}
+              style={metricInputStyle}
+            />
+            <input
+              type="number"
+              value={form.views}
+              onChange={(e) => setForm({ ...form, views: e.target.value })}
+              placeholder="Просмотры"
+              style={metricInputStyle}
+            />
+            <input
+              type="number"
+              value={form.reactions}
+              onChange={(e) => setForm({ ...form, reactions: e.target.value })}
+              placeholder="Реакции / лайки"
+              style={metricInputStyle}
+            />
+            <input
+              type="number"
+              value={form.comments}
+              onChange={(e) => setForm({ ...form, comments: e.target.value })}
+              placeholder="Комментарии"
+              style={metricInputStyle}
+            />
+            <input
+              type="number"
+              value={form.saves}
+              onChange={(e) => setForm({ ...form, saves: e.target.value })}
+              placeholder="Сохранения"
+              style={metricInputStyle}
+            />
+            <input
+              type="number"
+              value={form.shares}
+              onChange={(e) => setForm({ ...form, shares: e.target.value })}
+              placeholder="Шейры / репосты"
+              style={metricInputStyle}
+            />
+            <input
+              type="text"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Заметка (опционально)"
+              style={{ ...metricInputStyle, gridColumn: "span 2" }}
+            />
+          </div>
+          <button
+            onClick={async () => {
+              if (!workspaceKey) return;
+              if (form.postTitle.trim().length < 1) return;
+              await add.mutateAsync({
+                postTitle: form.postTitle.trim(),
+                postType: form.postType,
+                platform: form.platform,
+                topic: form.topic.trim() || undefined,
+                publishedAt: new Date(form.publishedDate).getTime(),
+                views: parseInt(form.views || "0", 10) || 0,
+                reactions: parseInt(form.reactions || "0", 10) || 0,
+                comments: parseInt(form.comments || "0", 10) || 0,
+                saves: parseInt(form.saves || "0", 10) || 0,
+                shares: parseInt(form.shares || "0", 10) || 0,
+                notes: form.notes.trim() || undefined,
+              });
+              setForm(EMPTY_FORM);
+              setShowForm(false);
+            }}
+            disabled={add.isPending}
+            className="btn-gold"
+            style={{ marginTop: 14, padding: "10px 18px" }}
+          >
+            {add.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Сохраняю...
+              </>
+            ) : (
+              "Сохранить публикацию"
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* AI report */}
+      {insights.data && insights.data.report && (
+        <div
+          className="bento-card"
+          style={{
+            padding: 24,
+            marginBottom: 24,
+            borderLeft: "3px solid var(--brand-gold)",
+          }}
+        >
+          <div
+            className="eyebrow"
+            style={{ marginBottom: 12, color: "var(--brand-gold)" }}
+          >
+            AI-разбор · {insights.data.metricsAnalyzed} публикаций · за{" "}
+            {insights.data.windowDays} дней
+          </div>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              fontFamily: "var(--font-body)",
+              fontSize: 14,
+              lineHeight: 1.6,
+              margin: 0,
+            }}
+          >
+            {insights.data.report}
+          </pre>
+        </div>
+      )}
+      {insights.data && insights.data.needsMore && (
+        <div className="bento-card" style={{ padding: 18, marginBottom: 24 }}>
+          <div className="text-platinum" style={{ fontSize: 13 }}>
+            {insights.data.message}
+          </div>
+        </div>
+      )}
+      {insights.error && (
+        <div
+          className="bento-card"
+          style={{
+            padding: 16,
+            marginBottom: 24,
+            borderLeft: "3px solid #e25555",
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#e25555", fontWeight: 600 }}>
+            Разбор сорвался
+          </div>
+          <div className="text-platinum" style={{ fontSize: 13, marginTop: 4 }}>
+            {insights.error.message}
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      {list.isLoading && (
+        <div className="text-platinum" style={{ fontSize: 14 }}>
+          <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+          Загружаю метрики...
+        </div>
+      )}
+      {!list.isLoading && items.length === 0 && (
+        <div className="bento-card" style={{ padding: 24 }}>
+          <div className="text-platinum" style={{ fontSize: 14 }}>
+            Пока ничего не занесено. После публикации жми «Добавить
+            публикацию» и заноси цифры — через 5-10 постов появится первый
+            осмысленный AI-разбор.
+          </div>
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="bento-card" style={{ padding: 0, overflow: "hidden" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "1fr 80px 100px 70px 70px 70px 70px 70px 70px 40px",
+              gap: 0,
+              fontSize: 12,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              opacity: 0.6,
+              padding: "12px 16px",
+              borderBottom: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div>Заголовок</div>
+            <div>Тип</div>
+            <div>Дата</div>
+            <div style={{ textAlign: "right" }}>Views</div>
+            <div style={{ textAlign: "right" }}>R</div>
+            <div style={{ textAlign: "right" }}>C</div>
+            <div style={{ textAlign: "right" }}>S</div>
+            <div style={{ textAlign: "right" }}>Sh</div>
+            <div style={{ textAlign: "right" }}>ER%</div>
+            <div></div>
+          </div>
+          {items.map((m) => {
+            const dateStr = new Date(m.publishedAt).toLocaleDateString("ru-RU", {
+              day: "2-digit",
+              month: "short",
+            });
+            const erColor =
+              m.erPercent >= 8
+                ? "#3ecf8e"
+                : m.erPercent >= 4
+                  ? "var(--brand-gold)"
+                  : "var(--brand-platinum)";
+            const isEditing = editingId === m.id;
+            const numInput = (
+              key: keyof typeof editForm,
+              w = 60,
+            ) => (
+              <input
+                type="number"
+                min={0}
+                value={editForm[key]}
+                onChange={(e) =>
+                  setEditForm((s) => ({ ...s, [key]: e.target.value }))
+                }
+                style={{
+                  width: w,
+                  background: "var(--ink-3)",
+                  color: "#fff",
+                  border: "1px solid rgba(212,168,67,0.4)",
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  fontSize: 12,
+                  fontFamily: "var(--font-body)",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              />
+            );
+            return (
+              <div
+                key={m.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "1fr 80px 100px 80px 70px 70px 70px 70px 70px 70px",
+                  gap: 0,
+                  alignItems: "center",
+                  fontSize: 13,
+                  padding: "12px 16px",
+                  borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  background: isEditing
+                    ? "rgba(212,168,67,0.06)"
+                    : undefined,
+                }}
+              >
+                <div
+                  title={m.postTitle}
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.postTitle}
+                  {m.topic && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 11,
+                        padding: "1px 8px",
+                        background: "var(--gold-soft-fill)",
+                        color: "var(--brand-gold)",
+                        borderRadius: 9999,
+                      }}
+                    >
+                      #{m.topic}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>{m.postType}</div>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>{dateStr}</div>
+                <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {isEditing ? numInput("views", 80) : m.views.toLocaleString("ru-RU")}
+                </div>
+                <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
+                  {isEditing ? numInput("reactions") : m.reactions}
+                </div>
+                <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
+                  {isEditing ? numInput("comments") : m.comments}
+                </div>
+                <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
+                  {isEditing ? numInput("saves") : m.saves}
+                </div>
+                <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
+                  {isEditing ? numInput("shares") : m.shares}
+                </div>
+                <div
+                  style={{
+                    textAlign: "right",
+                    fontVariantNumeric: "tabular-nums",
+                    fontWeight: 700,
+                    color: erColor,
+                  }}
+                >
+                  {m.erPercent}%
+                </div>
+                <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (!workspaceKey) return;
+                          update.mutate({
+                            id: m.id,
+                            views: parseInt(editForm.views || "0", 10) || 0,
+                            reactions: parseInt(editForm.reactions || "0", 10) || 0,
+                            comments: parseInt(editForm.comments || "0", 10) || 0,
+                            saves: parseInt(editForm.saves || "0", 10) || 0,
+                            shares: parseInt(editForm.shares || "0", 10) || 0,
+                            notes: editForm.notes || undefined,
+                          });
+                          setEditingId(null);
+                        }}
+                        title="Сохранить"
+                        style={{
+                          background: "var(--brand-gold)",
+                          color: "var(--ink)",
+                          border: 0,
+                          borderRadius: 9999,
+                          width: 24,
+                          height: 24,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        title="Отмена"
+                        style={{
+                          background: "transparent",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "var(--muted-foreground)",
+                          borderRadius: 9999,
+                          width: 24,
+                          height: 24,
+                          cursor: "pointer",
+                          fontSize: 11,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setEditForm({
+                            views: String(m.views),
+                            reactions: String(m.reactions),
+                            comments: String(m.comments),
+                            saves: String(m.saves),
+                            shares: String(m.shares),
+                            notes: m.notes ?? "",
+                          });
+                        }}
+                        title="Править цифры"
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: "var(--brand-platinum)",
+                          opacity: 0.5,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!workspaceKey) return;
+                          if (!confirm(`Удалить «${m.postTitle.slice(0, 40)}»?`)) return;
+                          del.mutate({ id: m.id });
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: "var(--brand-platinum)",
+                          opacity: 0.5,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const metricInputStyle: React.CSSProperties = {
+  background: "var(--ink-3)",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 14,
+  padding: "10px 14px",
+  fontSize: 13,
+  fontFamily: "var(--font-body)",
+  width: "100%",
+};
+
+/* ─── Сводный дашборд по своим публикациям (P: «довести до идеала») ───
+   Считает агрегаты по всем загруженным метрикам и рисует мини-график
+   ER по последним постам. Всё считается на клиенте из уже полученного
+   списка — без доп. запросов. */
+type MetricItem = {
+  id: string;
+  postTitle: string;
+  postType: string;
+  platform: string | null;
+  topic: string | null;
+  publishedAt: number;
+  views: number;
+  reactions: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  erPercent: number;
+};
+
+const POST_TYPE_LABELS: Record<string, string> = {
+  post: "Посты",
+  reels: "Reels",
+  carousel: "Карусели",
+  story: "Stories",
+  other: "Другое",
+};
+
+function MetricsSummary({ items }: { items: MetricItem[] }) {
+  const n = items.length;
+  const totalViews = items.reduce((s, m) => s + m.views, 0);
+  const totalEng = items.reduce(
+    (s, m) => s + m.reactions + m.comments + m.saves + m.shares,
+    0,
+  );
+  /* Средний ER считаем по постам с просмотрами, чтобы посты без
+     указанных views не занижали среднее нулями. */
+  const withViews = items.filter((m) => m.views > 0);
+  const avgER =
+    withViews.length > 0
+      ? withViews.reduce((s, m) => s + m.erPercent, 0) / withViews.length
+      : 0;
+
+  const best = withViews.length
+    ? [...withViews].sort((a, b) => b.erPercent - a.erPercent)[0]
+    : null;
+
+  /* Лучший формат по среднему ER (минимум 1 пост в формате). */
+  const byFormat = new Map<string, { sum: number; count: number }>();
+  for (const m of withViews) {
+    const e = byFormat.get(m.postType) ?? { sum: 0, count: 0 };
+    e.sum += m.erPercent;
+    e.count += 1;
+    byFormat.set(m.postType, e);
+  }
+  const formatAverages = Array.from(byFormat.entries())
+    .map(([type, { sum, count }]) => ({ type, avg: sum / count }))
+    .sort((a, b) => b.avg - a.avg);
+  const bestFormat = formatAverages[0] ?? null;
+
+  return (
+    <div style={{ marginBottom: 24, display: "grid", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <SummaryTile label="Публикаций" value={String(n)} />
+        <SummaryTile label="Всего просмотров" value={fmtNum(totalViews)} />
+        <SummaryTile
+          label="Вовлечений"
+          value={fmtNum(totalEng)}
+          hint="реакции + комменты + сохранения + репосты"
+        />
+        <SummaryTile
+          label="Средний ER"
+          value={`${avgER.toFixed(1)}%`}
+          accent
+        />
+        <SummaryTile
+          label="Лучший формат"
+          value={bestFormat ? POST_TYPE_LABELS[bestFormat.type] ?? bestFormat.type : "—"}
+          hint={bestFormat ? `средний ER ${bestFormat.avg.toFixed(1)}%` : undefined}
+        />
+      </div>
+
+      {best && (
+        <div
+          className="bento-card"
+          style={{
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            borderLeft: "3px solid var(--brand-gold)",
+          }}
+        >
+          <Sparkles
+            className="w-4 h-4"
+            style={{ color: "var(--brand-gold)", flexShrink: 0 }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+              Топ-пост по вовлечённости:{" "}
+            </span>
+            <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>
+              «{best.postTitle}»
+            </span>
+            <span style={{ fontSize: 12, color: "var(--brand-gold)", marginLeft: 6 }}>
+              ER {best.erPercent.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      <ERChart items={items} />
+    </div>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="bento-card" style={{ padding: 16 }} title={hint}>
+      <div
+        className="eyebrow"
+        style={{ marginBottom: 6, fontSize: 10 }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 24,
+          fontWeight: 700,
+          color: accent ? "var(--brand-gold)" : "#fff",
+          letterSpacing: "-0.5px",
+          lineHeight: 1,
+        }}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div
+          style={{
+            fontSize: 10,
+            color: "var(--muted-foreground)",
+            marginTop: 4,
+            lineHeight: 1.3,
+          }}
+        >
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Мини-график ER по последним 16 постам (хронологически). Чистый SVG,
+   без библиотек. Высота столбца ∝ ER, заливка золотом, лучший —
+   ярче. Ховер показывает заголовок и ER. */
+function ERChart({ items }: { items: MetricItem[] }) {
+  const data = [...items]
+    .filter((m) => m.views > 0)
+    .sort((a, b) => a.publishedAt - b.publishedAt)
+    .slice(-16);
+  if (data.length < 2) return null;
+
+  const maxER = Math.max(...data.map((m) => m.erPercent), 0.1);
+  const W = 100;
+  const gap = 1.2;
+  const barW = (W - gap * (data.length - 1)) / data.length;
+  const bestER = Math.max(...data.map((m) => m.erPercent));
+
+  return (
+    <div className="bento-card" style={{ padding: 18 }}>
+      <div
+        className="eyebrow"
+        style={{ marginBottom: 14, fontSize: 10 }}
+      >
+        Динамика ER · последние {data.length} постов
+      </div>
+      <svg
+        viewBox={`0 0 ${W} 36`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: 90, display: "block", overflow: "visible" }}
+      >
+        {data.map((m, i) => {
+          const h = Math.max(1.5, (m.erPercent / maxER) * 32);
+          const x = i * (barW + gap);
+          const isBest = m.erPercent === bestER;
+          return (
+            <g key={m.id}>
+              <rect
+                x={x}
+                y={34 - h}
+                width={barW}
+                height={h}
+                rx={0.6}
+                fill={isBest ? "var(--brand-gold)" : "rgba(212,168,67,0.4)"}
+              >
+                <title>{`${m.postTitle}\nER ${m.erPercent.toFixed(1)}% · ${fmtNum(m.views)} просмотров`}</title>
+              </rect>
+            </g>
+          );
+        })}
+      </svg>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 8,
+          fontSize: 10,
+          color: "var(--muted-foreground)",
+        }}
+      >
+        <span>{new Date(data[0].publishedAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "short" })}</span>
+        <span>пик ER {bestER.toFixed(1)}%</span>
+        <span>{new Date(data[data.length - 1].publishedAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "short" })}</span>
+      </div>
+    </div>
+  );
+}
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
 }

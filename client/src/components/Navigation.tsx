@@ -1,67 +1,247 @@
 import { Link, useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { BarChart3, BookOpen, Sparkles, Moon, Sun } from "lucide-react";
-import { useTheme } from "@/contexts/ThemeContext";
+import {
+  BarChart3, BookOpen, Sparkles, Calendar, Library, KeyRound,
+  TrendingUp, Link2, Layers, LogOut, MessageCircle, CreditCard, Crown, MessageSquare, Microscope, Bookmark,
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+
+/* Главная нав-полоса.
+   Desktop: логотип слева, primary по центру (воронка создания контента),
+   utility справа иконками. iPhone: логотип сверху, ниже горизонтальный
+   скролл-стрип со всеми разделами. Размеры тапов ≥ 40×40.
+
+   Порядок primary = реальный путь пользователя:
+   Идеи (витрина тем) → Студия (генерация) → План (расписание+архив,
+   объединённый раздел с табами) → Аналитика (что сработало).
+   Реже используемое (тренды, интеграции, голос, тариф, настройки) — в utility. */
+const primary = [
+  { href: "/dashboard", label: "Идеи", icon: BookOpen },
+  { href: "/templates", label: "Шаблоны", icon: Bookmark },
+  { href: "/assistant", label: "Помощник", icon: MessageSquare },
+  { href: "/generator", label: "Студия", icon: Sparkles },
+  { href: "/carousel", label: "Карусели", icon: Layers },
+  { href: "/plan", label: "План", icon: Calendar },
+  { href: "/analytics", label: "Аналитика", icon: BarChart3 },
+];
+
+const utility = [
+  { href: "/trends", label: "Тренды", icon: TrendingUp },
+  { href: "/analyze", label: "Разбор", icon: Microscope },
+  { href: "/integrations", label: "Интеграции", icon: Link2 },
+  { href: "/voice", label: "Голос", icon: MessageCircle },
+  { href: "/pricing", label: "Тариф", icon: CreditCard },
+  { href: "/settings", label: "Настройки", icon: KeyRound },
+];
+
+type Item = { href: string; label: string; icon: typeof BookOpen };
+
+/* /plan — обёртка над Календарём и Архивом; ему «принадлежат» и
+   старые маршруты /calendar и /library (оставлены для закладок). */
+function isActive(href: string, location: string): boolean {
+  if (href === "/plan") {
+    return (
+      location === "/plan" ||
+      location === "/calendar" ||
+      location === "/library"
+    );
+  }
+  return location === href;
+}
+
+function NavChip({
+  item,
+  active,
+  iconOnly,
+}: {
+  item: Item;
+  active: boolean;
+  iconOnly?: boolean;
+}) {
+  const Icon = item.icon;
+  return (
+    <Link href={item.href}>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          minHeight: 40,
+          padding: iconOnly ? "8px 12px" : "8px 14px",
+          borderRadius: 9999,
+          fontFamily: "var(--font-body)",
+          fontSize: 13,
+          fontWeight: 600,
+          letterSpacing: "-0.1px",
+          color: active ? "var(--brand-gold)" : "var(--brand-platinum)",
+          background: active ? "rgba(212,168,67,0.12)" : "transparent",
+          transition: "color .2s, background .2s",
+          whiteSpace: "nowrap",
+        }}
+        title={iconOnly ? item.label : undefined}
+      >
+        <Icon className="w-4 h-4" />
+        <span className={iconOnly ? "hidden lg:inline" : "hidden sm:inline"}>
+          {item.label}
+        </span>
+      </span>
+    </Link>
+  );
+}
 
 export default function Navigation() {
   const [location] = useLocation();
-  const { theme, toggleTheme } = useTheme();
+  const { user, signOut } = useAuth();
+  /* Утилитные пункты для админа: добавляем «Админ» в начало utility,
+     чтобы кнопка была заметной, но не теснила primary-навигацию. */
+  const utilityForUser =
+    user?.role === "admin"
+      ? [{ href: "/admin", label: "Админ", icon: Crown }, ...utility]
+      : utility;
+  const all = [...primary, ...utilityForUser];
+
+  const trialDaysLeft = user
+    ? Math.max(
+        0,
+        Math.ceil((user.trialEndsAt - Date.now()) / (24 * 60 * 60 * 1000)),
+      )
+    : 0;
+  const trialActive = user?.plan === "trial" && trialDaysLeft > 0;
 
   return (
-    <nav className="sticky top-0 z-40 bg-background border-b border-border shadow-sm">
-      <div className="container flex items-center justify-between py-4">
+    <nav
+      className="frosted sticky top-0 z-40"
+      style={{
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        paddingTop: "max(10px, env(safe-area-inset-top))",
+        paddingBottom: 10,
+      }}
+    >
+      {/* Desktop / tablet: одна полоса. */}
+      <div className="container hidden md:flex items-center gap-6">
         <Link href="/">
-          <span className="font-bold text-xl text-foreground hover:text-primary transition-colors cursor-pointer">
-            Content Plan Dashboard
+          <span
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 20,
+              letterSpacing: "-0.3px",
+              color: "#fff",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Content Studio<span style={{ color: "var(--brand-gold)" }}>.</span>
           </span>
         </Link>
+        <ul
+          className="flex flex-1 items-center justify-center"
+          style={{ listStyle: "none", gap: 4, margin: 0, padding: 0 }}
+        >
+          {primary.map((it) => (
+            <li key={it.href}>
+              <NavChip item={it} active={isActive(it.href, location)} />
+            </li>
+          ))}
+        </ul>
+        <ul
+          className="flex items-center"
+          style={{ listStyle: "none", gap: 2, margin: 0, padding: 0 }}
+        >
+          {trialActive && (
+            <li>
+              <Link href="/pricing">
+                <span style={trialBadgeStyle} title="Триал-статус">
+                  Триал · {trialDaysLeft} {ruDays(trialDaysLeft)}
+                </span>
+              </Link>
+            </li>
+          )}
+          {utilityForUser.map((it) => (
+            <li key={it.href}>
+              <NavChip item={it} active={isActive(it.href, location)} iconOnly />
+            </li>
+          ))}
+          {user && (
+            <li>
+              <button
+                onClick={signOut}
+                title={`Выйти (${user.email})`}
+                style={iconBtnStyle}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </li>
+          )}
+        </ul>
+      </div>
 
-        <div className="flex gap-2 items-center">
-          <Link href="/">
-            <Button
-              variant={location === "/" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">План</span>
-            </Button>
-          </Link>
-
-          <Link href="/analytics">
-            <Button
-              variant={location === "/analytics" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Аналитика</span>
-            </Button>
-          </Link>
-
-          <Link href="/generator">
-            <Button
-              variant={location === "/generator" ? "default" : "ghost"}
-              className="flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span className="hidden sm:inline">Генератор</span>
-            </Button>
-          </Link>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className="ml-2"
-            title={theme === "light" ? "Тёмная тема" : "Светлая тема"}
+      {/* iPhone: компактный заголовок + горизонтальный скролл-стрип. */}
+      <div className="container md:hidden" style={{ paddingBottom: 0 }}>
+        <Link href="/">
+          <span
+            style={{
+              display: "block",
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 16,
+              letterSpacing: "-0.3px",
+              color: "#fff",
+              marginBottom: 8,
+            }}
           >
-            {theme === "light" ? (
-              <Moon className="w-4 h-4" />
-            ) : (
-              <Sun className="w-4 h-4" />
-            )}
-          </Button>
-        </div>
+            Content Studio
+            <span style={{ color: "var(--brand-gold)" }}>.</span>
+          </span>
+        </Link>
+        <ul
+          className="scroll-strip flex items-center"
+          style={{ listStyle: "none", gap: 4, margin: 0, padding: "0 12px" }}
+        >
+          {all.map((it) => (
+            <li key={it.href}>
+              <NavChip item={it} active={isActive(it.href, location)} />
+            </li>
+          ))}
+        </ul>
       </div>
     </nav>
   );
+}
+
+const trialBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "5px 12px",
+  borderRadius: 9999,
+  background: "rgba(212,168,67,0.14)",
+  color: "var(--brand-gold)",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.6,
+  textTransform: "uppercase",
+  cursor: "pointer",
+  marginRight: 6,
+  whiteSpace: "nowrap",
+};
+
+const iconBtnStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 36,
+  height: 36,
+  borderRadius: 9999,
+  background: "transparent",
+  border: 0,
+  color: "var(--brand-platinum)",
+  cursor: "pointer",
+  marginLeft: 4,
+};
+
+function ruDays(n: number): string {
+  const m = n % 10;
+  const m100 = n % 100;
+  if (m === 1 && m100 !== 11) return "день";
+  if ([2, 3, 4].includes(m) && ![12, 13, 14].includes(m100)) return "дня";
+  return "дней";
 }
