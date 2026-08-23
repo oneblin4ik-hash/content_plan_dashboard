@@ -1,0 +1,42 @@
+// Конфигурация воркера Crimson Studio, продублированная в корень репозитория.
+//
+// Само приложение живёт в `apps/studio-v2/` и там же лежит его основной
+// `wrangler.jsonc`. Этот файл существует ради Cloudflare Workers Builds:
+// сборка там запускается в корне репозитория, а wrangler ищет конфигурацию
+// в текущей папке и выше — но не глубже, — поэтому вложенный файл он не
+// находит и падает с «Missing entry-point to Worker script».
+//
+// Все пути ниже ведут в `apps/studio-v2/`, а `build.command` собирает клиент
+// перед выкладкой, так что развернуть приложение можно и из корня.
+// Настройки должны совпадать с `apps/studio-v2/wrangler.jsonc`; за этим следит
+// тест `apps/studio-v2/tests/config.test.ts`.
+{
+  "$schema": "apps/studio-v2/node_modules/wrangler/config-schema.json",
+  "name": "crimson-studio",
+  "main": "apps/studio-v2/worker/index.ts",
+  "compatibility_date": "2025-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "pnpm install --frozen-lockfile && pnpm run build",
+    "cwd": "apps/studio-v2"
+  },
+  "assets": {
+    "directory": "apps/studio-v2/dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "crimson-studio",
+      "database_id": "aa3c3882-1bc2-42eb-af47-1e44058a96f7",
+      "migrations_dir": "apps/studio-v2/db/migrations"
+    }
+  ],
+  "observability": { "enabled": true },
+  "vars": {
+    "LLM_PROVIDER": "gemini",
+    "LLM_MODEL": "gemini-2.5-flash",
+    "DAILY_GENERATION_LIMIT": "20"
+  }
+}
