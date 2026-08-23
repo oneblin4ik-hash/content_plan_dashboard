@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "crimson-studio",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "aa3c3882-1bc2-42eb-af47-1e44058a96f7",
       "migrations_dir": "db/migrations"
     }
   ],
