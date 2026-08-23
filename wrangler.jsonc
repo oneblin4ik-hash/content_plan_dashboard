@@ -40,7 +40,7 @@
   "observability": { "enabled": true },
   "vars": {
     "LLM_PROVIDER": "gemini",
-    "LLM_MODEL": "gemini-2.5-flash",
+    "LLM_MODEL": "gemini-3.6-flash",
     "DAILY_GENERATION_LIMIT": "20"
   }
 }

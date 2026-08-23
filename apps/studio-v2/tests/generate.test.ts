@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Folder, GeneratedIdea, Idea } from "../shared/types";
+import type { Folder, GeneratedIdea, Idea, Overview } from "../shared/types";
 import { buildPrompt, parseIdeas } from "../worker/llm";
 import { call, json, login, migrate, reset, testEnv } from "./helpers";
 
@@ -361,5 +361,44 @@ describe("гонки", () => {
     });
     expect(response.status).toBe(404);
     expect((await json<{ error: string }>(response)).error).toContain("не найден");
+  });
+});
+
+describe("снятая с обслуживания модель", () => {
+  /*
+   * Google retires a model and answers 404 with an English notice naming the
+   * replacement. Left raw, that reads as a broken key; the actionable part is
+   * which variable to change and to what.
+   */
+  it("называет переменную и модель на замену", async () => {
+    const cookie = await login();
+    stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 404,
+              message:
+                "This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the equivalent.",
+            },
+          }),
+          { status: 404 },
+        ),
+    );
+
+    const response = await call("/api/generate", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ segmentCode: "S3", channel: "reels", count: 3 }),
+    });
+    expect(response.status).toBe(502);
+
+    const { error } = await json<{ error: string }>(response);
+    expect(error).toContain("LLM_MODEL");
+    expect(error).toContain("gemini-3.6-flash");
+
+    // A dead model must not burn the day's quota.
+    const overview = await json<Overview>(await call("/api/overview", { cookie }));
+    expect(overview.usage.used).toBe(0);
   });
 });
