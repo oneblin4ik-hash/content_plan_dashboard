@@ -20,14 +20,17 @@ import { dailyLimit, type Env } from "../env";
 import { generateIdeas, generateMaterial, LlmError } from "../llm";
 import {
   activeDraft,
+  countBin,
   countIdeas,
   countMaterials,
   createDb,
   getMaterial,
+  listBin,
   listFolders,
   listIdeas,
   listMaterials,
   nowSeconds,
+  parseScenes,
   purgeExpiredBin,
   readUsage,
   releaseGeneration,
@@ -59,16 +62,18 @@ function firstIssue(error: { issues: Array<{ message: string }> }): string {
 }
 
 async function buildOverview(db: Db, env: Env): Promise<Overview> {
-  const [folders, ideaTotals, materials, used, draft] = await Promise.all([
+  const [folders, ideaTotals, materials, bin, used, draft] = await Promise.all([
     listFolders(db),
     countIdeas(db),
     countMaterials(db),
+    countBin(db),
     readUsage(db),
     activeDraft(db),
   ]);
   return {
     folders,
-    totals: { ...ideaTotals, materials },
+    // The bin holds both kinds, so its count is not the ideas-only tally.
+    totals: { ...ideaTotals, bin, materials },
     usage: { used, limit: dailyLimit(env) },
     draft,
   };
@@ -135,6 +140,17 @@ api.post("/ideas/:id/restore", async (c) => {
   const id = Number.parseInt(c.req.param("id"), 10);
   if (!Number.isFinite(id)) return c.json({ error: "Некорректный идентификатор." }, 400);
   await c.get("db").update(schema.ideas).set({ deletedAt: null }).where(eq(schema.ideas.id, id));
+  return c.json({ ok: true });
+});
+
+api.post("/materials/:id/restore", async (c) => {
+  const id = Number.parseInt(c.req.param("id"), 10);
+  if (!Number.isFinite(id)) return c.json({ error: "Некорректный идентификатор." }, 400);
+  await c
+    .get("db")
+    .update(schema.materials)
+    .set({ deletedAt: null })
+    .where(eq(schema.materials.id, id));
   return c.json({ ok: true });
 });
 
@@ -448,9 +464,10 @@ api.post("/materials/generate", async (c) => {
 
 api.get("/export", async (c) => {
   const db = c.get("db");
-  const [folderRows, ideaRows] = await Promise.all([
+  const [folderRows, ideaRows, materialRows] = await Promise.all([
     db.select().from(schema.folders),
     db.select().from(schema.ideas).where(isNull(schema.ideas.deletedAt)),
+    db.select().from(schema.materials).where(isNull(schema.materials.deletedAt)),
   ]);
 
   const folderName = new Map(folderRows.map((folder) => [folder.id, folder.name]));
@@ -478,6 +495,21 @@ api.get("/export", async (c) => {
       source: idea.source,
       isFavorite: idea.isFavorite,
       createdAt: idea.createdAt,
+    })),
+    // Materials travel too: without them a "выгрузить всё" file cannot restore
+    // the scripts and posts, which is the work that took the longest to make.
+    materials: materialRows.map((material) => ({
+      kind: material.kind,
+      segmentCode: material.segmentCode,
+      status: material.status,
+      title: material.title,
+      hook: material.hook,
+      body: material.body,
+      scenes: parseScenes(material.scenes),
+      visual: material.visual,
+      cta: material.cta,
+      isFavorite: material.isFavorite,
+      createdAt: material.createdAt,
     })),
   });
 });
@@ -545,25 +577,58 @@ api.post("/import", async (c) => {
     );
   }
 
+  // Materials dedupe on the same title-and-timestamp key as ideas, so
+  // re-importing a file stays safe rather than doubling the library.
+  const incomingMaterials = parsed.data.materials;
+  const materialDuplicates = new Set<string>();
+  const materialTitles = [...new Set(incomingMaterials.map((material) => material.title))];
+  for (let i = 0; i < materialTitles.length; i += 200) {
+    const chunk = materialTitles.slice(i, i + 200);
+    if (chunk.length === 0) continue;
+    const rows = await db
+      .select({ title: schema.materials.title, createdAt: schema.materials.createdAt })
+      .from(schema.materials)
+      .where(inArray(schema.materials.title, chunk));
+    for (const row of rows) materialDuplicates.add(dedupeKey(row.title, row.createdAt));
+  }
+
+  const freshMaterials = incomingMaterials.filter(
+    (material) => !materialDuplicates.has(dedupeKey(material.title, material.createdAt)),
+  );
+
+  for (let i = 0; i < freshMaterials.length; i += 100) {
+    const chunk = freshMaterials.slice(i, i + 100);
+    await db.insert(schema.materials).values(
+      chunk.map((material) => ({
+        // No ideaId: identifiers differ in a fresh database and a material
+        // stands on its own.
+        ideaId: null,
+        kind: material.kind,
+        segmentCode: material.segmentCode,
+        status: material.status,
+        title: material.title,
+        hook: material.hook,
+        body: material.body,
+        scenes: material.scenes ? JSON.stringify(material.scenes) : null,
+        visual: material.visual,
+        cta: material.cta,
+        isFavorite: material.isFavorite,
+        createdAt: material.createdAt,
+      })),
+    );
+  }
+
   return c.json({
     addedFolders,
     addedIdeas: fresh.length,
-    skipped: parsed.data.ideas.length - fresh.length,
+    addedMaterials: freshMaterials.length,
+    skipped:
+      parsed.data.ideas.length -
+      fresh.length +
+      (incomingMaterials.length - freshMaterials.length),
   });
 });
 
 /* ----------------------------------- bin ---------------------------------- */
 
-api.get("/bin", async (c) => {
-  const rows = await c
-    .get("db")
-    .select()
-    .from(schema.ideas)
-    .where(sql`${schema.ideas.deletedAt} is not null`)
-    .orderBy(sql`${schema.ideas.deletedAt} desc`)
-    .limit(200);
-
-  return c.json({
-    ideas: rows.map((row) => ({ id: row.id, title: row.title, deletedAt: row.deletedAt })),
-  });
-});
+api.get("/bin", async (c) => c.json(await listBin(c.get("db"))));

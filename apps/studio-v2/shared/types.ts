@@ -105,6 +105,20 @@ export const loginSchema = z.object({
   passphrase: z.string().min(1, "Введите код-фразу").max(200),
 });
 
+/**
+ * One shot of a Reels script. The trainer films from this directly, so every
+ * field answers a question he would otherwise have to improvise on camera.
+ */
+export const materialSceneSchema = z.object({
+  time: z.string().trim().min(1).max(40),
+  shot: z.string().trim().min(3).max(400),
+  speech: z.string().trim().min(3).max(700),
+  caption: z.string().trim().max(200).default(""),
+  edit: z.string().trim().max(300).default(""),
+});
+
+export type MaterialScene = z.infer<typeof materialSceneSchema>;
+
 export const importSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
@@ -123,6 +137,28 @@ export const importSchema = z.object({
       source: z.enum(["manual", "generated"]).default("manual"),
     }),
   ),
+  /*
+   * Defaulted to empty so a file written before materials existed still
+   * imports. The link back to a source idea is deliberately not carried:
+   * идентификаторы в новой базе другие, а материал самодостаточен.
+   */
+  materials: z
+    .array(
+      z.object({
+        kind: materialKindSchema,
+        segmentCode: segmentSchema.default("S3"),
+        status: materialStatusSchema.default("draft"),
+        title: z.string().trim().min(1).max(220),
+        hook: z.string().max(420).nullable().default(null),
+        body: z.string().max(6000).nullable().default(null),
+        scenes: z.array(materialSceneSchema).max(12).nullable().default(null),
+        visual: z.string().max(520).nullable().default(null),
+        cta: z.string().max(320).nullable().default(null),
+        isFavorite: z.boolean().default(false),
+        createdAt: z.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
 });
 
 export type ImportPayload = z.infer<typeof importSchema>;
@@ -162,20 +198,6 @@ export type Draft = {
   ideas: GeneratedIdea[];
   createdAt: number;
 };
-
-/**
- * One shot of a Reels script. The trainer films from this directly, so every
- * field answers a question he would otherwise have to improvise on camera.
- */
-export const materialSceneSchema = z.object({
-  time: z.string().trim().min(1).max(40),
-  shot: z.string().trim().min(3).max(400),
-  speech: z.string().trim().min(3).max(700),
-  caption: z.string().trim().max(200).default(""),
-  edit: z.string().trim().max(300).default(""),
-});
-
-export type MaterialScene = z.infer<typeof materialSceneSchema>;
 
 /** What the model returns for one material, before it is stored. */
 export const generatedMaterialSchema = z.object({

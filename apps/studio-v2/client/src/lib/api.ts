@@ -138,10 +138,27 @@ export const api = {
   deleteMaterial: (id: number) =>
     request<{ ok: true }>(`/materials/${id}`, { method: "DELETE" }),
 
+  bin: () =>
+    request<{
+      ideas: Array<{ id: number; title: string; deletedAt: number }>;
+      materials: Array<{ id: number; title: string; kind: MaterialKind; deletedAt: number }>;
+    }>("/bin"),
+
+  restoreIdea: (id: number) =>
+    request<{ ok: true }>(`/ideas/${id}/restore`, { method: "POST" }),
+
+  restoreMaterial: (id: number) =>
+    request<{ ok: true }>(`/materials/${id}/restore`, { method: "POST" }),
+
   exportAll: () => request<Record<string, unknown>>("/export"),
 
   importAll: (payload: unknown) =>
-    request<{ addedFolders: number; addedIdeas: number; skipped: number }>("/import", {
+    request<{
+      addedFolders: number;
+      addedIdeas: number;
+      addedMaterials: number;
+      skipped: number;
+    }>("/import", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

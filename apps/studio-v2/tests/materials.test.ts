@@ -362,3 +362,112 @@ describe("правка и удаление", () => {
     ).toBe(401);
   });
 });
+
+describe("корзина и перенос данных", () => {
+  async function seed(cookie: string) {
+    stubFetch(() => geminiResponse(reelPayload()));
+    return json<Material>(
+      await call("/api/materials/generate", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify({ kind: "reel", topic: "Тема сценария", length: "medium" }),
+      }),
+    );
+  }
+
+  /*
+   * Regression: deleting a material promised a 30-day return, but the bin and
+   * the restore endpoint knew only about ideas, so the promise was empty and
+   * the purge would eventually take the script for good.
+   */
+  it("возвращает удалённый материал из корзины", async () => {
+    const cookie = await login();
+    const material = await seed(cookie);
+    await call(`/api/materials/${material.id}`, { method: "DELETE", cookie });
+
+    const bin = await json<{ materials: Array<{ id: number; title: string; kind: string }> }>(
+      await call("/api/bin", { cookie }),
+    );
+    expect(bin.materials.map((item) => item.id)).toContain(material.id);
+    expect(bin.materials[0]?.kind).toBe("reel");
+
+    const restored = await call(`/api/materials/${material.id}/restore`, {
+      method: "POST",
+      cookie,
+    });
+    expect(restored.status).toBe(200);
+
+    const listed = await json<Material[]>(await call("/api/materials", { cookie }));
+    expect(listed.map((item) => item.id)).toContain(material.id);
+    // And it comes back whole, shots included.
+    expect(listed[0]?.scenes).toHaveLength(2);
+  });
+
+  it("считает в корзине и идеи, и материалы", async () => {
+    const cookie = await login();
+    const material = await seed(cookie);
+    const ideaId = await makeIdea(cookie, "Идея на удаление сегодня");
+
+    await call(`/api/materials/${material.id}`, { method: "DELETE", cookie });
+    await call(`/api/ideas/${ideaId}`, { method: "DELETE", cookie });
+
+    const overview = await json<Overview>(await call("/api/overview", { cookie }));
+    expect(overview.totals.bin).toBe(2);
+  });
+
+  /*
+   * Regression: "выгрузить всё" skipped materials entirely, so a restore from
+   * the file silently lost every script and post — the slowest work to redo.
+   */
+  it("переносит материалы через выгрузку и загрузку", async () => {
+    const cookie = await login();
+    const material = await seed(cookie);
+
+    const dump = await json<{ materials: unknown[] }>(await call("/api/export", { cookie }));
+    expect(dump.materials).toHaveLength(1);
+
+    await call(`/api/materials/${material.id}`, { method: "DELETE", cookie });
+    await testEnv.DB.exec("DELETE FROM materials");
+
+    const imported = await json<{ addedMaterials: number }>(
+      await call("/api/import", { method: "POST", cookie, body: JSON.stringify(dump) }),
+    );
+    expect(imported.addedMaterials).toBe(1);
+
+    const listed = await json<Material[]>(await call("/api/materials", { cookie }));
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.title).toBe(material.title);
+    expect(listed[0]?.scenes).toHaveLength(2);
+    expect(listed[0]?.hook).toBe(material.hook);
+  });
+
+  it("не удваивает материалы при повторной загрузке того же файла", async () => {
+    const cookie = await login();
+    await seed(cookie);
+    const dump = await json<Record<string, unknown>>(await call("/api/export", { cookie }));
+
+    const again = await json<{ addedMaterials: number; skipped: number }>(
+      await call("/api/import", { method: "POST", cookie, body: JSON.stringify(dump) }),
+    );
+    expect(again.addedMaterials).toBe(0);
+    expect(again.skipped).toBeGreaterThan(0);
+    expect(await json<Material[]>(await call("/api/materials", { cookie }))).toHaveLength(1);
+  });
+
+  it("принимает выгрузку, сделанную до появления материалов", async () => {
+    const cookie = await login();
+    const legacy = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      folders: [],
+      ideas: [],
+    };
+    const response = await call("/api/import", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify(legacy),
+    });
+    expect(response.status).toBe(200);
+    expect((await json<{ addedMaterials: number }>(response)).addedMaterials).toBe(0);
+  });
+});

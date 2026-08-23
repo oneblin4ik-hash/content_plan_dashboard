@@ -309,4 +309,49 @@ export async function countMaterials(db: Db): Promise<number> {
   return Number(row?.live ?? 0);
 }
 
+/**
+ * Everything sitting in the bin, ideas and materials alike. Both are soft
+ * deleted and both are purged after the same 30 days, so both have to be
+ * offered back — a delete toast that promises a return has to mean it.
+ */
+export async function listBin(db: Db): Promise<{
+  ideas: Array<{ id: number; title: string; deletedAt: number }>;
+  materials: Array<{ id: number; title: string; kind: MaterialKind; deletedAt: number }>;
+}> {
+  const [ideaRows, materialRows] = await Promise.all([
+    db
+      .select({ id: schema.ideas.id, title: schema.ideas.title, deletedAt: schema.ideas.deletedAt })
+      .from(schema.ideas)
+      .where(sql`${schema.ideas.deletedAt} is not null`)
+      .orderBy(sql`${schema.ideas.deletedAt} desc`)
+      .limit(200),
+    db
+      .select({
+        id: schema.materials.id,
+        title: schema.materials.title,
+        kind: schema.materials.kind,
+        deletedAt: schema.materials.deletedAt,
+      })
+      .from(schema.materials)
+      .where(sql`${schema.materials.deletedAt} is not null`)
+      .orderBy(sql`${schema.materials.deletedAt} desc`)
+      .limit(200),
+  ]);
+
+  return {
+    ideas: ideaRows.map((row) => ({ ...row, deletedAt: row.deletedAt ?? 0 })),
+    materials: materialRows.map((row) => ({ ...row, deletedAt: row.deletedAt ?? 0 })),
+  };
+}
+
+export async function countBin(db: Db): Promise<number> {
+  const [ideaRow] = await db
+    .select({ n: sql<number>`sum(case when ${schema.ideas.deletedAt} is not null then 1 else 0 end)` })
+    .from(schema.ideas);
+  const [materialRow] = await db
+    .select({ n: sql<number>`sum(case when ${schema.materials.deletedAt} is not null then 1 else 0 end)` })
+    .from(schema.materials);
+  return Number(ideaRow?.n ?? 0) + Number(materialRow?.n ?? 0);
+}
+
 export { schema };
