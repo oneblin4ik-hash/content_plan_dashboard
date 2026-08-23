@@ -1,0 +1,47 @@
+{
+  "name": "crimson-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "build": "tsc --build --force && vite build",
+    "check": "tsc --build --force",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "node scripts/smoke.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:local": "wrangler d1 migrations apply crimson-studio --local",
+    "db:remote": "wrangler d1 migrations apply crimson-studio --remote",
+    "deploy": "vite build && wrangler deploy"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.6",
+    "hono": "^4.9.10",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.1",
+    "@types/react-dom": "^19.2.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "drizzle-kit": "^0.31.5",
+    "playwright-core": "^1.62.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7",
+    "vitest": "~4.1.11",
+    "wrangler": "^4.42.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  }
+}
