@@ -8,19 +8,30 @@ import {
   ideaQuerySchema,
   ideaUpdateSchema,
   importSchema,
+  materialCreateSchema,
+  materialGenerateSchema,
+  materialQuerySchema,
+  materialUpdateSchema,
   saveDraftSchema,
   type Overview,
 } from "../../shared/types";
 import { segments, voice } from "../../shared/seed";
 import { dailyLimit, type Env } from "../env";
-import { generateIdeas, LlmError } from "../llm";
+import { generateIdeas, generateMaterial, LlmError } from "../llm";
 import {
   activeDraft,
+  countBin,
   countIdeas,
+  countMaterials,
   createDb,
+  getMaterial,
+  listBin,
   listFolders,
   listIdeas,
+  insertAll,
+  listMaterials,
   nowSeconds,
+  parseScenes,
   purgeExpiredBin,
   readUsage,
   releaseGeneration,
@@ -52,13 +63,21 @@ function firstIssue(error: { issues: Array<{ message: string }> }): string {
 }
 
 async function buildOverview(db: Db, env: Env): Promise<Overview> {
-  const [folders, totals, used, draft] = await Promise.all([
+  const [folders, ideaTotals, materials, bin, used, draft] = await Promise.all([
     listFolders(db),
     countIdeas(db),
+    countMaterials(db),
+    countBin(db),
     readUsage(db),
     activeDraft(db),
   ]);
-  return { folders, totals, usage: { used, limit: dailyLimit(env) }, draft };
+  return {
+    folders,
+    // The bin holds both kinds, so its count is not the ideas-only tally.
+    totals: { ...ideaTotals, bin, materials },
+    usage: { used, limit: dailyLimit(env) },
+    draft,
+  };
 }
 
 api.get("/overview", async (c) => c.json(await buildOverview(c.get("db"), c.env)));
@@ -122,6 +141,17 @@ api.post("/ideas/:id/restore", async (c) => {
   const id = Number.parseInt(c.req.param("id"), 10);
   if (!Number.isFinite(id)) return c.json({ error: "Некорректный идентификатор." }, 400);
   await c.get("db").update(schema.ideas).set({ deletedAt: null }).where(eq(schema.ideas.id, id));
+  return c.json({ ok: true });
+});
+
+api.post("/materials/:id/restore", async (c) => {
+  const id = Number.parseInt(c.req.param("id"), 10);
+  if (!Number.isFinite(id)) return c.json({ error: "Некорректный идентификатор." }, 400);
+  await c
+    .get("db")
+    .update(schema.materials)
+    .set({ deletedAt: null })
+    .where(eq(schema.materials.id, id));
   return c.json({ ok: true });
 });
 
@@ -256,22 +286,35 @@ api.post("/drafts/save", async (c) => {
   }
 
   const folderId = parsed.data.folderId ?? draft.folderId;
-  await db.insert(schema.ideas).values(
-    chosen.map((idea) => ({
-      folderId,
-      segmentCode: draft.segmentCode,
-      channel: (idea.channel === "telegram" ? "telegram" : "reels") as "telegram" | "reels",
-      priority: "viral" as const,
-      title: idea.title ?? "",
-      hook: idea.hook ?? null,
-      format: idea.format ?? null,
-      angle: idea.angle ?? null,
-      visual: idea.visual ?? null,
-      cta: idea.cta ?? null,
-      objective: idea.objective ?? null,
-      source: "generated" as const,
-    })),
-  );
+  const values = chosen.map((idea) => ({
+    folderId,
+    segmentCode: draft.segmentCode,
+    channel: (idea.channel === "telegram" ? "telegram" : "reels") as "telegram" | "reels",
+    priority: "viral" as const,
+    title: idea.title ?? "",
+    hook: idea.hook ?? null,
+    format: idea.format ?? null,
+    angle: idea.angle ?? null,
+    visual: idea.visual ?? null,
+    cta: idea.cta ?? null,
+    objective: idea.objective ?? null,
+    source: "generated" as const,
+  }));
+
+  /*
+   * The draft is released again if the insert fails. Leaving it consumed once
+   * cost a whole generation: the ideas never landed, and the only copy of them
+   * was locked behind a draft the app would no longer offer.
+   */
+  try {
+    await insertAll(values, (batch) => db.insert(schema.ideas).values(batch));
+  } catch (error) {
+    await db
+      .update(schema.drafts)
+      .set({ consumedAt: null })
+      .where(eq(schema.drafts.id, draft.id));
+    throw error;
+  }
 
   return c.json({ saved: chosen.length, folderId });
 });
@@ -289,11 +332,156 @@ api.delete("/drafts/:id", async (c) => {
 
 /* ------------------------------ export / import --------------------------- */
 
+/* -------------------------------- materials ------------------------------- */
+
+api.get("/materials", async (c) => {
+  const parsed = materialQuerySchema.safeParse({
+    kind: c.req.query("kind") ?? "all",
+    status: c.req.query("status") ?? "all",
+    search: c.req.query("search") ?? "",
+    favoritesOnly: c.req.query("favoritesOnly") ?? false,
+  });
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+  return c.json(await listMaterials(c.get("db"), parsed.data));
+});
+
+api.get("/materials/:id", async (c) => {
+  const material = await getMaterial(c.get("db"), Number(c.req.param("id")));
+  if (!material) return c.json({ error: "Материал не найден." }, 404);
+  return c.json(material);
+});
+
+api.post("/materials", async (c) => {
+  const parsed = materialCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const [row] = await c
+    .get("db")
+    .insert(schema.materials)
+    .values({
+      ...parsed.data,
+      scenes: parsed.data.scenes ? JSON.stringify(parsed.data.scenes) : null,
+    })
+    .returning({ id: schema.materials.id });
+
+  return c.json({ id: row?.id ?? null }, 201);
+});
+
+api.patch("/materials/:id", async (c) => {
+  const parsed = materialUpdateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const { scenes, ...rest } = parsed.data;
+  const patch: Record<string, unknown> = { ...rest, updatedAt: nowSeconds() };
+  // `scenes` is absent when untouched and null when deliberately cleared, and
+  // the two must not collapse into one another on the way to the column.
+  if (scenes !== undefined) patch.scenes = scenes === null ? null : JSON.stringify(scenes);
+
+  const rows = await c
+    .get("db")
+    .update(schema.materials)
+    .set(patch)
+    .where(and(eq(schema.materials.id, Number(c.req.param("id"))), isNull(schema.materials.deletedAt)))
+    .returning({ id: schema.materials.id });
+
+  if (rows.length === 0) return c.json({ error: "Материал не найден." }, 404);
+  return c.json({ ok: true });
+});
+
+api.delete("/materials/:id", async (c) => {
+  const rows = await c
+    .get("db")
+    .update(schema.materials)
+    .set({ deletedAt: nowSeconds() })
+    .where(and(eq(schema.materials.id, Number(c.req.param("id"))), isNull(schema.materials.deletedAt)))
+    .returning({ id: schema.materials.id });
+
+  if (rows.length === 0) return c.json({ error: "Материал не найден." }, 404);
+  return c.json({ ok: true });
+});
+
+api.post("/materials/generate", async (c) => {
+  const parsed = materialGenerateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstIssue(parsed.error) }, 400);
+
+  const db = c.get("db");
+  const input = parsed.data;
+
+  // An idea supplies both the topic and the angle the script has to keep.
+  let source: Parameters<typeof generateMaterial>[1]["source"] = null;
+  let topic = input.topic;
+  let segmentCode: string = input.segmentCode;
+
+  if (input.ideaId !== null) {
+    const [idea] = await db
+      .select()
+      .from(schema.ideas)
+      .where(and(eq(schema.ideas.id, input.ideaId), isNull(schema.ideas.deletedAt)))
+      .limit(1);
+    if (!idea) return c.json({ error: "Идея не найдена." }, 404);
+
+    topic = topic || idea.title;
+    segmentCode = idea.segmentCode;
+    source = { hook: idea.hook, format: idea.format, angle: idea.angle, visual: idea.visual, cta: idea.cta };
+  }
+
+  if (!topic.trim()) return c.json({ error: "Укажите тему материала." }, 400);
+
+  const limit = dailyLimit(c.env);
+  if (!(await reserveGeneration(db, limit))) {
+    return c.json({ error: `Дневной лимит генераций исчерпан (${limit}). Продолжим завтра.` }, 429);
+  }
+
+  let material;
+  try {
+    material = await generateMaterial(c.env, {
+      kind: input.kind,
+      topic,
+      segmentCode,
+      length: input.length,
+      goal: input.goal,
+      source,
+    });
+  } catch (error) {
+    await releaseGeneration(db);
+    const message =
+      error instanceof LlmError
+        ? error.message
+        : "Не удалось связаться с генератором. Попробуйте ещё раз.";
+    return c.json({ error: message }, 502);
+  }
+
+  /*
+   * Stored before the response goes out. A material costs a generation, and
+   * unlike an idea batch there is nothing to re-pick from — losing it to a
+   * closed tab would mean paying for it twice.
+   */
+  const [row] = await db
+    .insert(schema.materials)
+    .values({
+      ideaId: input.ideaId,
+      kind: input.kind,
+      segmentCode,
+      title: material.title,
+      hook: material.hook,
+      body: material.body || null,
+      scenes: material.scenes.length > 0 ? JSON.stringify(material.scenes) : null,
+      visual: material.visual || null,
+      cta: material.cta,
+    })
+    .returning({ id: schema.materials.id });
+
+  const saved = row ? await getMaterial(db, row.id) : null;
+  if (!saved) return c.json({ error: "Материал не удалось сохранить." }, 500);
+  return c.json(saved, 201);
+});
+
 api.get("/export", async (c) => {
   const db = c.get("db");
-  const [folderRows, ideaRows] = await Promise.all([
+  const [folderRows, ideaRows, materialRows] = await Promise.all([
     db.select().from(schema.folders),
     db.select().from(schema.ideas).where(isNull(schema.ideas.deletedAt)),
+    db.select().from(schema.materials).where(isNull(schema.materials.deletedAt)),
   ]);
 
   const folderName = new Map(folderRows.map((folder) => [folder.id, folder.name]));
@@ -321,6 +509,21 @@ api.get("/export", async (c) => {
       source: idea.source,
       isFavorite: idea.isFavorite,
       createdAt: idea.createdAt,
+    })),
+    // Materials travel too: without them a "выгрузить всё" file cannot restore
+    // the scripts and posts, which is the work that took the longest to make.
+    materials: materialRows.map((material) => ({
+      kind: material.kind,
+      segmentCode: material.segmentCode,
+      status: material.status,
+      title: material.title,
+      hook: material.hook,
+      body: material.body,
+      scenes: parseScenes(material.scenes),
+      visual: material.visual,
+      cta: material.cta,
+      isFavorite: material.isFavorite,
+      createdAt: material.createdAt,
     })),
   });
 });
@@ -366,47 +569,76 @@ api.post("/import", async (c) => {
     (idea) => !duplicates.has(dedupeKey(idea.title, idea.createdAt)),
   );
 
-  for (let i = 0; i < fresh.length; i += 100) {
-    const chunk = fresh.slice(i, i + 100);
-    await db.insert(schema.ideas).values(
-      chunk.map((idea) => ({
-        folderId: idea.folderName ? (byName.get(idea.folderName) ?? null) : null,
-        segmentCode: idea.segmentCode ?? "S3",
-        channel: idea.channel ?? "reels",
-        priority: idea.priority ?? "medium",
-        title: idea.title,
-        hook: idea.hook ?? null,
-        format: idea.format ?? null,
-        angle: idea.angle ?? null,
-        visual: idea.visual ?? null,
-        cta: idea.cta ?? null,
-        objective: idea.objective ?? null,
-        source: idea.source,
-        isFavorite: idea.isFavorite,
-        createdAt: idea.createdAt,
-      })),
-    );
+  await insertAll(
+    fresh.map((idea) => ({
+      folderId: idea.folderName ? (byName.get(idea.folderName) ?? null) : null,
+      segmentCode: idea.segmentCode ?? "S3",
+      channel: idea.channel ?? "reels",
+      priority: idea.priority ?? "medium",
+      title: idea.title,
+      hook: idea.hook ?? null,
+      format: idea.format ?? null,
+      angle: idea.angle ?? null,
+      visual: idea.visual ?? null,
+      cta: idea.cta ?? null,
+      objective: idea.objective ?? null,
+      source: idea.source,
+      isFavorite: idea.isFavorite,
+      createdAt: idea.createdAt,
+    })),
+    (batch) => db.insert(schema.ideas).values(batch),
+  );
+
+  // Materials dedupe on the same title-and-timestamp key as ideas, so
+  // re-importing a file stays safe rather than doubling the library.
+  const incomingMaterials = parsed.data.materials;
+  const materialDuplicates = new Set<string>();
+  const materialTitles = [...new Set(incomingMaterials.map((material) => material.title))];
+  for (let i = 0; i < materialTitles.length; i += 200) {
+    const chunk = materialTitles.slice(i, i + 200);
+    if (chunk.length === 0) continue;
+    const rows = await db
+      .select({ title: schema.materials.title, createdAt: schema.materials.createdAt })
+      .from(schema.materials)
+      .where(inArray(schema.materials.title, chunk));
+    for (const row of rows) materialDuplicates.add(dedupeKey(row.title, row.createdAt));
   }
+
+  const freshMaterials = incomingMaterials.filter(
+    (material) => !materialDuplicates.has(dedupeKey(material.title, material.createdAt)),
+  );
+
+  await insertAll(
+    freshMaterials.map((material) => ({
+      // No ideaId: identifiers differ in a fresh database and a material
+      // stands on its own.
+      ideaId: null,
+      kind: material.kind,
+      segmentCode: material.segmentCode,
+      status: material.status,
+      title: material.title,
+      hook: material.hook,
+      body: material.body,
+      scenes: material.scenes ? JSON.stringify(material.scenes) : null,
+      visual: material.visual,
+      cta: material.cta,
+      isFavorite: material.isFavorite,
+      createdAt: material.createdAt,
+    })),
+    (batch) => db.insert(schema.materials).values(batch),
+  );
 
   return c.json({
     addedFolders,
     addedIdeas: fresh.length,
-    skipped: parsed.data.ideas.length - fresh.length,
+    addedMaterials: freshMaterials.length,
+    skipped:
+      parsed.data.ideas.length -
+      fresh.length +
+      (incomingMaterials.length - freshMaterials.length),
   });
 });
 
 /* ----------------------------------- bin ---------------------------------- */
 
-api.get("/bin", async (c) => {
-  const rows = await c
-    .get("db")
-    .select()
-    .from(schema.ideas)
-    .where(sql`${schema.ideas.deletedAt} is not null`)
-    .orderBy(sql`${schema.ideas.deletedAt} desc`)
-    .limit(200);
-
-  return c.json({
-    ideas: rows.map((row) => ({ id: row.id, title: row.title, deletedAt: row.deletedAt })),
-  });
-});
+api.get("/bin", async (c) => c.json(await listBin(c.get("db"))));

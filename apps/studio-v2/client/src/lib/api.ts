@@ -3,6 +3,10 @@ import type {
   Folder,
   GeneratedIdea,
   Idea,
+  Material,
+  MaterialKind,
+  MaterialLength,
+  MaterialStatus,
   Overview,
   SortKey,
 } from "@shared/types";
@@ -102,13 +106,62 @@ export const api = {
   discardDraft: (draftId: number) =>
     request<{ ok: true }>(`/drafts/${draftId}`, { method: "DELETE" }),
 
+  materials: (params: {
+    kind: MaterialKind | "all";
+    status: MaterialStatus | "all";
+    search: string;
+    favoritesOnly?: boolean;
+  }) => {
+    const query = new URLSearchParams({
+      kind: params.kind,
+      status: params.status,
+      search: params.search,
+    });
+    if (params.favoritesOnly) query.set("favoritesOnly", "true");
+    return request<Material[]>(`/materials?${query.toString()}`);
+  },
+
+  material: (id: number) => request<Material>(`/materials/${id}`),
+
+  generateMaterial: (body: {
+    kind: MaterialKind;
+    ideaId: number | null;
+    topic: string;
+    segmentCode: string;
+    length: MaterialLength;
+    goal: string;
+  }) => request<Material>("/materials/generate", { method: "POST", body: JSON.stringify(body) }),
+
+  updateMaterial: (id: number, data: Partial<Material>) =>
+    request<{ ok: true }>(`/materials/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  deleteMaterial: (id: number) =>
+    request<{ ok: true }>(`/materials/${id}`, { method: "DELETE" }),
+
+  bin: () =>
+    request<{
+      ideas: Array<{ id: number; title: string; deletedAt: number }>;
+      materials: Array<{ id: number; title: string; kind: MaterialKind; deletedAt: number }>;
+    }>("/bin"),
+
+  restoreIdea: (id: number) =>
+    request<{ ok: true }>(`/ideas/${id}/restore`, { method: "POST" }),
+
+  restoreMaterial: (id: number) =>
+    request<{ ok: true }>(`/materials/${id}/restore`, { method: "POST" }),
+
   exportAll: () => request<Record<string, unknown>>("/export"),
 
   importAll: (payload: unknown) =>
-    request<{ addedFolders: number; addedIdeas: number; skipped: number }>("/import", {
+    request<{
+      addedFolders: number;
+      addedIdeas: number;
+      addedMaterials: number;
+      skipped: number;
+    }>("/import", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
 };
 
-export type { Draft, Folder, Idea, Overview };
+export type { Draft, Folder, Idea, Material, Overview };

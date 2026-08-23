@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Overview } from "@shared/types";
 import { api, ApiError } from "../lib/api";
 import { triggerHaptic } from "../lib/haptics";
 import { Button, Toast } from "../components/ui";
-import { IconDownload, IconUpload } from "../components/icons";
+import { IconDownload, IconFilm, IconMessage, IconUpload } from "../components/icons";
 
 function todayStamp(): string {
   return new Date().toISOString().slice(0, 10);
@@ -21,6 +21,41 @@ export function Data({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [bin, setBin] = useState<Awaited<ReturnType<typeof api.bin>> | null>(null);
+  const [binOpen, setBinOpen] = useState(false);
+
+  useEffect(() => {
+    if (!binOpen) return;
+    let cancelled = false;
+    void api.bin().then((result) => {
+      if (!cancelled) setBin(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [binOpen, overview.totals.bin]);
+
+  const restore = async (kind: "idea" | "material", id: number, title: string) => {
+    try {
+      if (kind === "idea") await api.restoreIdea(id);
+      else await api.restoreMaterial(id);
+      triggerHaptic("success");
+      setBin((current) =>
+        current === null
+          ? null
+          : kind === "idea"
+            ? { ...current, ideas: current.ideas.filter((item) => item.id !== id) }
+            : { ...current, materials: current.materials.filter((item) => item.id !== id) },
+      );
+      setNotice({ kind: "ok", text: `«${title}» вернулась на место.` });
+      onChanged();
+    } catch (cause) {
+      setNotice({
+        kind: "error",
+        text: cause instanceof ApiError ? cause.message : "Не удалось восстановить.",
+      });
+    }
+  };
 
   const exportAll = async () => {
     setBusy("export");
@@ -57,7 +92,7 @@ export function Data({
       triggerHaptic("success");
       setNotice({
         kind: "ok",
-        text: `Добавлено идей: ${result.addedIdeas}, папок: ${result.addedFolders}. Пропущено дублей: ${result.skipped}.`,
+        text: `Добавлено идей: ${result.addedIdeas}, материалов: ${result.addedMaterials}, папок: ${result.addedFolders}. Пропущено дублей: ${result.skipped}.`,
       });
       onChanged();
     } catch (cause) {
@@ -159,8 +194,50 @@ export function Data({
       <div className="glass card tight">
         <div className="label">Генератор</div>
         <Row label="Сегодня" value={`${overview.usage.used} из ${overview.usage.limit}`} />
-        <Row label="В корзине" value={String(overview.totals.bin)} />
         <Row label="В избранном" value={String(overview.totals.favorites)} />
+      </div>
+
+      {/*
+        The delete toast promises a return within 30 days. Until this list
+        existed that promise had nowhere to land: the API could restore, but
+        nothing in the app ever called it.
+      */}
+      <div className="glass card tight">
+        <div className="label">Корзина · хранится 30 дней</div>
+        <Row label="Внутри" value={String(overview.totals.bin)} />
+        {overview.totals.bin > 0 ? (
+          <Button variant="ghost" full onClick={() => setBinOpen((open) => !open)}>
+            {binOpen ? "Свернуть" : "Показать и вернуть"}
+          </Button>
+        ) : null}
+
+        {binOpen && bin !== null
+          ? [
+              ...bin.ideas.map((item) => ({ ...item, kind: "idea" as const })),
+              ...bin.materials.map((item) => ({ ...item, kind: "material" as const, sub: item.kind })),
+            ]
+              .sort((a, b) => b.deletedAt - a.deletedAt)
+              .map((item) => (
+                <div className="bin-row" key={`${item.kind}-${item.id}`}>
+                  <span className="bin-ic">
+                    {item.kind === "material" ? (
+                      "sub" in item && item.sub === "reel" ? (
+                        <IconFilm size={14} />
+                      ) : (
+                        <IconMessage size={14} />
+                      )
+                    ) : null}
+                  </span>
+                  <span className="bin-title">{item.title}</span>
+                  <button
+                    className="bin-back"
+                    onClick={() => void restore(item.kind, item.id, item.title)}
+                  >
+                    Вернуть
+                  </button>
+                </div>
+              ))
+          : null}
       </div>
 
       <div className="glass card tight">

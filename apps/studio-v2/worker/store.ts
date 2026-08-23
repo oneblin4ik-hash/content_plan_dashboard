@@ -7,10 +7,14 @@ import type {
   Folder,
   GeneratedIdea,
   Idea,
+  Material,
+  MaterialKind,
+  MaterialScene,
+  MaterialStatus,
   SegmentCode,
   SortKey,
 } from "../shared/types";
-import { generatedIdeaSchema } from "../shared/types";
+import { generatedIdeaSchema, materialSceneSchema } from "../shared/types";
 
 export type Db = DrizzleD1Database<typeof schema>;
 
@@ -220,6 +224,161 @@ export async function releaseGeneration(db: Db): Promise<void> {
 export async function purgeExpiredBin(db: Db): Promise<void> {
   const cutoff = nowSeconds() - BIN_RETENTION_DAYS * 24 * 60 * 60;
   await db.delete(schema.ideas).where(sql`${schema.ideas.deletedAt} is not null and ${schema.ideas.deletedAt} < ${cutoff}`);
+  await db
+    .delete(schema.materials)
+    .where(sql`${schema.materials.deletedAt} is not null and ${schema.materials.deletedAt} < ${cutoff}`);
+}
+
+function toMaterial(row: schema.MaterialRow): Material {
+  return {
+    id: row.id,
+    ideaId: row.ideaId,
+    kind: row.kind,
+    segmentCode: row.segmentCode as SegmentCode,
+    status: row.status,
+    title: row.title,
+    hook: row.hook,
+    body: row.body,
+    scenes: parseScenes(row.scenes),
+    visual: row.visual,
+    cta: row.cta,
+    isFavorite: row.isFavorite,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Scenes are stored as JSON text. A row written by an older build — or by a
+ * hand-run query — must not take the whole list down, so anything unparseable
+ * reads back as "no scenes" rather than throwing.
+ */
+export function parseScenes(raw: string | null): MaterialScene[] | null {
+  if (raw === null) return null;
+  try {
+    const result = materialSceneSchema.array().safeParse(JSON.parse(raw));
+    return result.success ? result.data : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function listMaterials(
+  db: Db,
+  query: { kind: MaterialKind | "all"; status: MaterialStatus | "all"; search: string; favoritesOnly: boolean },
+): Promise<Material[]> {
+  const filters = [isNull(schema.materials.deletedAt)];
+
+  if (query.kind !== "all") filters.push(eq(schema.materials.kind, query.kind));
+  if (query.status !== "all") filters.push(eq(schema.materials.status, query.status));
+  if (query.favoritesOnly) filters.push(eq(schema.materials.isFavorite, true));
+
+  if (query.search) {
+    const needle = `%${query.search.toLowerCase()}%`;
+    const match = or(
+      like(sql`lower(${schema.materials.title})`, needle),
+      like(sql`lower(coalesce(${schema.materials.hook}, ''))`, needle),
+      like(sql`lower(coalesce(${schema.materials.body}, ''))`, needle),
+    );
+    if (match) filters.push(match);
+  }
+
+  const rows = await db
+    .select()
+    .from(schema.materials)
+    .where(and(...filters))
+    .orderBy(desc(schema.materials.updatedAt))
+    .limit(500);
+
+  return rows.map(toMaterial);
+}
+
+export async function getMaterial(db: Db, id: number): Promise<Material | null> {
+  const [row] = await db
+    .select()
+    .from(schema.materials)
+    .where(and(eq(schema.materials.id, id), isNull(schema.materials.deletedAt)))
+    .limit(1);
+  return row ? toMaterial(row) : null;
+}
+
+export async function countMaterials(db: Db): Promise<number> {
+  const [row] = await db
+    .select({ live: sql<number>`sum(case when ${schema.materials.deletedAt} is null then 1 else 0 end)` })
+    .from(schema.materials);
+  return Number(row?.live ?? 0);
+}
+
+/**
+ * Everything sitting in the bin, ideas and materials alike. Both are soft
+ * deleted and both are purged after the same 30 days, so both have to be
+ * offered back — a delete toast that promises a return has to mean it.
+ */
+export async function listBin(db: Db): Promise<{
+  ideas: Array<{ id: number; title: string; deletedAt: number }>;
+  materials: Array<{ id: number; title: string; kind: MaterialKind; deletedAt: number }>;
+}> {
+  const [ideaRows, materialRows] = await Promise.all([
+    db
+      .select({ id: schema.ideas.id, title: schema.ideas.title, deletedAt: schema.ideas.deletedAt })
+      .from(schema.ideas)
+      .where(sql`${schema.ideas.deletedAt} is not null`)
+      .orderBy(sql`${schema.ideas.deletedAt} desc`)
+      .limit(200),
+    db
+      .select({
+        id: schema.materials.id,
+        title: schema.materials.title,
+        kind: schema.materials.kind,
+        deletedAt: schema.materials.deletedAt,
+      })
+      .from(schema.materials)
+      .where(sql`${schema.materials.deletedAt} is not null`)
+      .orderBy(sql`${schema.materials.deletedAt} desc`)
+      .limit(200),
+  ]);
+
+  return {
+    ideas: ideaRows.map((row) => ({ ...row, deletedAt: row.deletedAt ?? 0 })),
+    materials: materialRows.map((row) => ({ ...row, deletedAt: row.deletedAt ?? 0 })),
+  };
+}
+
+export async function countBin(db: Db): Promise<number> {
+  const [ideaRow] = await db
+    .select({ n: sql<number>`sum(case when ${schema.ideas.deletedAt} is not null then 1 else 0 end)` })
+    .from(schema.ideas);
+  const [materialRow] = await db
+    .select({ n: sql<number>`sum(case when ${schema.materials.deletedAt} is not null then 1 else 0 end)` })
+    .from(schema.materials);
+  return Number(ideaRow?.n ?? 0) + Number(materialRow?.n ?? 0);
+}
+
+/** D1 rejects any statement carrying more bound parameters than this. */
+export const D1_MAX_BOUND_PARAMS = 100;
+
+/**
+ * Inserts rows in batches that stay under D1's bound-parameter ceiling.
+ *
+ * Drizzle folds a multi-row insert into one statement and binds every column
+ * of every row, so the ceiling is reached far sooner than the row count
+ * suggests: eight ideas came to 104 parameters and the whole save failed with
+ * the draft already marked consumed. The batch size is measured from the
+ * statement drizzle actually builds, so adding a column cannot silently push
+ * it back over.
+ */
+export async function insertAll<Row>(
+  rows: Row[],
+  build: (batch: Row[]) => { toSQL(): { params: unknown[] } } & PromiseLike<unknown>,
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const perRow = build([rows[0] as Row]).toSQL().params.length || 1;
+  const size = Math.max(1, Math.floor(D1_MAX_BOUND_PARAMS / perRow));
+
+  for (let i = 0; i < rows.length; i += size) {
+    await build(rows.slice(i, i + size));
+  }
 }
 
 export { schema };

@@ -66,6 +66,43 @@ export const drafts = sqliteTable("drafts", {
   createdAt: integer("created_at").notNull().default(now),
 });
 
+/**
+ * A material is what an idea becomes once it is written out: a shot-by-shot
+ * Reels script or a finished Telegram post. Ideas are cheap and disposable,
+ * materials are the thing that actually gets published, so they carry a status
+ * and survive their source idea being deleted.
+ */
+export const materials = sqliteTable(
+  "materials",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ideaId: integer("idea_id").references(() => ideas.id, { onDelete: "set null" }),
+    kind: text("kind", { enum: ["reel", "post"] }).notNull(),
+    segmentCode: text("segment_code").notNull().default("S3"),
+    status: text("status", { enum: ["draft", "ready", "published"] })
+      .notNull()
+      .default("draft"),
+    title: text("title").notNull(),
+    hook: text("hook"),
+    /** Telegram post body, or the spoken through-line of a Reel. */
+    body: text("body"),
+    /** JSON array of MaterialScene for reels; null for posts. */
+    scenes: text("scenes"),
+    visual: text("visual"),
+    cta: text("cta"),
+    isFavorite: integer("is_favorite", { mode: "boolean" }).notNull().default(false),
+    /** Soft delete, same 30-day bin as ideas. */
+    deletedAt: integer("deleted_at"),
+    createdAt: integer("created_at").notNull().default(now),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (table) => [
+    index("materials_idea_idx").on(table.ideaId),
+    index("materials_created_idx").on(table.createdAt),
+    index("materials_deleted_idx").on(table.deletedAt),
+  ],
+);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -81,3 +118,4 @@ export const usage = sqliteTable("usage", {
 export type FolderRow = typeof folders.$inferSelect;
 export type IdeaRow = typeof ideas.$inferSelect;
 export type DraftRow = typeof drafts.$inferSelect;
+export type MaterialRow = typeof materials.$inferSelect;

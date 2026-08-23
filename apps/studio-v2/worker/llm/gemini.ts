@@ -3,38 +3,20 @@ import { LlmError } from "./index";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
-/** Mirrors the shape parseIdeas expects, so the model cannot drift. */
-const responseSchema = {
-  type: "OBJECT",
-  properties: {
-    ideas: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          title: { type: "STRING" },
-          hook: { type: "STRING" },
-          format: { type: "STRING" },
-          angle: { type: "STRING" },
-          visual: { type: "STRING" },
-          cta: { type: "STRING" },
-          channel: { type: "STRING", enum: ["telegram", "reels"] },
-          objective: { type: "STRING" },
-        },
-        required: ["title", "hook", "format", "angle", "visual", "cta", "channel", "objective"],
-      },
-    },
-  },
-  required: ["ideas"],
-};
-
-export async function callGemini(env: Env, system: string, user: string): Promise<string> {
+export async function callGemini(
+  env: Env,
+  system: string,
+  user: string,
+  responseSchema: unknown,
+): Promise<string> {
   const key = env.GEMINI_API_KEY;
   if (!key) {
     throw new LlmError("Ключ Gemini не настроен. Добавьте секрет GEMINI_API_KEY и попробуйте снова.");
   }
 
-  const model = env.LLM_MODEL || "gemini-2.5-flash";
+  // Google retires model names and stops serving them to new keys, so the
+  // name lives in LLM_MODEL and this is only the fallback.
+  const model = env.LLM_MODEL || "gemini-3.6-flash";
   const response = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
@@ -55,6 +37,12 @@ export async function callGemini(env: Env, system: string, user: string): Promis
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    if (response.status === 404 && /model/i.test(detail)) {
+      throw new LlmError(
+        `Модель «${model}» больше не обслуживается. Замените переменную LLM_MODEL на ту, ` +
+          `которую называет Google: ${extractSuggestedModel(detail) ?? "см. ответ API"}.`,
+      );
+    }
     throw new LlmError(`Gemini ответил ошибкой ${response.status}. ${detail.slice(0, 180)}`.trim());
   }
 
@@ -64,4 +52,9 @@ export async function callGemini(env: Env, system: string, user: string): Promis
   const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
   if (!text.trim()) throw new LlmError("Gemini вернул пустой ответ. Попробуйте ещё раз.");
   return text;
+}
+
+/** Pulls the replacement Google names in its retirement notice, if it named one. */
+function extractSuggestedModel(detail: string): string | null {
+  return detail.match(/models\/([A-Za-z0-9.\-]+)\s+for/)?.[1] ?? null;
 }

@@ -13,11 +13,13 @@ export function Ideas({
   folders,
   favoritesOnly,
   onEdit,
+  onMakeMaterial,
   onChanged,
 }: {
   folders: Folder[];
   favoritesOnly: boolean;
   onEdit: (idea: Idea) => void;
+  onMakeMaterial: (idea: Idea) => void;
   onChanged: () => void;
 }) {
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
@@ -183,6 +185,7 @@ export function Ideas({
             folder={idea.folderId === null ? undefined : folderById.get(idea.folderId)}
             onFavorite={toggleFavorite}
             onEdit={onEdit}
+            onMakeMaterial={onMakeMaterial}
             onDelete={remove}
             onCopy={copy}
           />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { GeneratedIdea, Idea, Overview } from "@shared/types";
+import type { GeneratedIdea, Idea, Material, Overview } from "@shared/types";
 import { api } from "./lib/api";
 import { installHaptics, triggerHaptic } from "./lib/haptics";
 import { useParallaxField, useSwipeNavigation } from "./lib/motion";
@@ -10,21 +10,32 @@ import { Results } from "./screens/Results";
 import { Folders } from "./screens/Folders";
 import { Data } from "./screens/Data";
 import { IdeaEditor } from "./screens/IdeaEditor";
+import { Materials } from "./screens/Materials";
+import { MaterialGenerator } from "./screens/MaterialGenerator";
+import { MaterialEditor } from "./screens/MaterialEditor";
 import { Toast } from "./components/ui";
 import {
   IconBack,
   IconBulb,
   IconFolder,
   IconHeart,
+  IconLayers,
   IconSettings,
   IconSpinner,
+  IconWand,
 } from "./components/icons";
 
-type Tab = "ideas" | "folders" | "favorites" | "data";
-type Mode = { kind: "tabs" } | { kind: "generate" } | { kind: "results"; draftId: number; ideas: GeneratedIdea[]; folderId: number | null };
+type Tab = "ideas" | "materials" | "folders" | "favorites" | "data";
+type Mode =
+  | { kind: "tabs" }
+  | { kind: "generate" }
+  | { kind: "results"; draftId: number; ideas: GeneratedIdea[]; folderId: number | null }
+  | { kind: "material-generate"; idea: Idea | null }
+  | { kind: "material"; material: Material };
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof IconBulb }> = [
   { id: "ideas", label: "Идеи", icon: IconBulb },
+  { id: "materials", label: "Материалы", icon: IconLayers },
   { id: "folders", label: "Папки", icon: IconFolder },
   { id: "favorites", label: "Избранное", icon: IconHeart },
   { id: "data", label: "Данные", icon: IconSettings },
@@ -32,6 +43,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof IconBulb }> = [
 
 const TAB_TITLES: Record<Tab, { kicker: string; title: string }> = {
   ideas: { kicker: "Банк тем", title: "Идеи" },
+  materials: { kicker: "Библиотека", title: "Материалы" },
   folders: { kicker: "Разбор банка", title: "Папки" },
   favorites: { kicker: "Отложено", title: "Избранное" },
   data: { kicker: "Настройки", title: "Данные" },
@@ -143,7 +155,11 @@ export default function App() {
       ? { kicker: "Генератор", title: "Новые темы" }
       : mode.kind === "results"
         ? { kicker: "Проверь и сохрани", title: `${mode.ideas.length} свежих идей` }
-        : TAB_TITLES[tab];
+        : mode.kind === "material-generate"
+          ? { kicker: "Генератор", title: mode.idea ? "Материал из идеи" : "Новый материал" }
+          : mode.kind === "material"
+            ? { kicker: mode.material.kind === "reel" ? "Сценарий" : "Пост", title: "Правка" }
+            : TAB_TITLES[tab];
 
   const backToTabs = () => {
     triggerHaptic("navigation");
@@ -170,7 +186,7 @@ export default function App() {
               {overview.totals.all} сохранено
             </span>
           ) : null}
-          {mode.kind === "generate" ? (
+          {mode.kind === "generate" || mode.kind === "material-generate" ? (
             <span
               className={
                 overview.usage.used >= overview.usage.limit ? "pill-status warn" : "pill-status"
@@ -211,11 +227,36 @@ export default function App() {
                 setMode({ kind: "tabs" });
               }}
             />
+          ) : mode.kind === "material-generate" ? (
+            <MaterialGenerator
+              idea={mode.idea}
+              usage={overview.usage}
+              onDone={(material) => {
+                setMode({ kind: "material", material });
+                void refresh();
+              }}
+              onCancel={backToTabs}
+            />
+          ) : mode.kind === "material" ? (
+            <MaterialEditor
+              material={mode.material}
+              onSaved={() => void refresh()}
+              onBack={() => {
+                setMode({ kind: "tabs" });
+                setTab("materials");
+              }}
+            />
+          ) : tab === "materials" ? (
+            <Materials
+              onOpen={(material) => setMode({ kind: "material", material })}
+              onChanged={() => void refresh()}
+            />
           ) : tab === "ideas" || tab === "favorites" ? (
             <Ideas
               folders={overview.folders}
               favoritesOnly={tab === "favorites"}
               onEdit={setEditing}
+              onMakeMaterial={(idea) => setMode({ kind: "material-generate", idea })}
               onChanged={() => void refresh()}
             />
           ) : tab === "folders" ? (
@@ -247,6 +288,22 @@ export default function App() {
             >
               <i className="gloss" />
               <span className="btn-label">Сгенерировать идеи</span>
+            </button>
+          </div>
+        ) : mode.kind === "tabs" && tab === "materials" ? (
+          <div className="dock">
+            <button
+              className="btn btn-primary btn-full"
+              onClick={() => {
+                triggerHaptic("navigation");
+                setMode({ kind: "material-generate", idea: null });
+              }}
+            >
+              <i className="gloss" />
+              <span className="btn-label">
+                <IconWand />
+                Написать материал
+              </span>
             </button>
           </div>
         ) : null}
