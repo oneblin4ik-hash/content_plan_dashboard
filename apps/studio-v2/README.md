@@ -8,45 +8,70 @@
 
 ## Что нужно один раз настроить
 
-Три шага. Ключи и код-фразу **никому не пересылай** — они кладутся прямо в секреты Cloudflare с твоей машины.
+База данных **уже создана** — `crimson-studio` в аккаунте Cloudflare владельца, её идентификатор прописан в `wrangler.jsonc`, таблицы применены. Остаётся выложить приложение и положить три секрета.
 
-### 1. Установить зависимости
+Ключи и код-фразу **никому не пересылай**: они вводятся прямо в Cloudflare и в репозиторий не попадают.
+
+### Способ А — через браузер, без терминала
+
+Cloudflare умеет сам собирать проект из GitHub. Это основной путь.
+
+1. **Workers & Pages** → **Create** → вкладка **Workers** → **Import a repository**.
+2. Подключи GitHub, выбери `content_plan_dashboard`, ветку `main`.
+3. Заполни поля сборки:
+
+   | Поле | Значение |
+   |---|---|
+   | Project name | `crimson-studio` |
+   | Root directory | `apps/studio-v2` |
+   | Build command | `pnpm install && pnpm build` |
+   | Deploy command | `npx wrangler deploy` |
+
+   `Root directory` можно оставить пустым — в корне репозитория лежит `wrangler.jsonc`, который соберёт и выложит это приложение. Заполненное поле просто ускоряет сборку: не собирается лишний соседний проект.
+
+4. **Create and deploy**.
+5. Открой воркер → **Settings** → **Variables and Secrets** → добавь три записи типа **Secret** (не Text):
+   `STUDIO_PASSPHRASE`, `AUTH_SECRET`, `GEMINI_API_KEY`.
+
+Секреты подхватываются сразу, пересобирать не нужно. Дальше каждое изменение в `main` выкладывается автоматически.
+
+### Если сборка упала
+
+Cloudflare показывает лог по ссылке из уведомления о сборке.
+
+- **`Missing entry-point to Worker script`, а выше в логе собирается что-то постороннее** — `dist/public/…`, `mermaid`, `cytoscape`. Значит, сборка идёт в корне репозитория, где лежит другой проект. На этот случай в корне есть свой `wrangler.jsonc`, который собирает и выкладывает `apps/studio-v2`, так что пустой `Root directory` больше не мешает. Если ошибка всё-таки появилась — проверь, что корневой `wrangler.jsonc` на месте.
+- **Сборка прошла, а адрес отдаёт 404 и `error code: 1042`** — проверь `Deploy command`. `npx wrangler versions upload` только загружает предварительную версию и ничего не публикует; для живого адреса нужен `npx wrangler deploy`.
+
+Корневой `wrangler.jsonc` дублирует настройки этого приложения, и расхождение между двумя файлами развернуло бы не то. Поэтому `pnpm test` сверяет их и падает с понятным сообщением, если они разошлись.
+
+### Способ Б — из терминала
 
 ```bash
 cd apps/studio-v2
 pnpm install
-```
-
-### 2. Создать базу данных
-
-```bash
 pnpm exec wrangler login
-pnpm exec wrangler d1 create crimson-studio
-```
-
-Команда напечатает `database_id`. Впиши его в `wrangler.jsonc` вместо строки из нулей, затем создай таблицы:
-
-```bash
-pnpm db:remote
-```
-
-### 3. Положить секреты
-
-```bash
-pnpm exec wrangler secret put STUDIO_PASSPHRASE   # код-фраза для входа
-pnpm exec wrangler secret put AUTH_SECRET         # длинная случайная строка
-pnpm exec wrangler secret put GEMINI_API_KEY      # ключ из Google AI Studio
-```
-
-Ключ Gemini заводится бесплатно на [aistudio.google.com](https://aistudio.google.com/apikey). `AUTH_SECRET` можно получить командой `openssl rand -base64 32`.
-
-### Выложить
-
-```bash
 pnpm deploy
 ```
 
-Wrangler напечатает адрес вида `https://crimson-studio.<аккаунт>.workers.dev`. Открывай его с телефона — приложение спросит код-фразу и запомнит её на 90 дней.
+```bash
+pnpm exec wrangler secret put STUDIO_PASSPHRASE
+pnpm exec wrangler secret put AUTH_SECRET
+pnpm exec wrangler secret put GEMINI_API_KEY
+```
+
+Ключ Gemini заводится бесплатно на [aistudio.google.com](https://aistudio.google.com/apikey). `AUTH_SECRET` — длинная случайная строка, например из `openssl rand -base64 32`.
+
+Адрес будет вида `https://crimson-studio.<аккаунт>.workers.dev`. Открывай с телефона: приложение спросит код-фразу и запомнит её на 90 дней.
+
+### Разворачиваешь в другом аккаунте Cloudflare?
+
+Записанный в `wrangler.jsonc` идентификатор принадлежит базе владельца, и чужому аккаунту она недоступна — деплой упадёт. Заведи свою и подставь её идентификатор:
+
+```bash
+pnpm exec wrangler d1 create crimson-studio   # напечатает database_id
+# впиши его в wrangler.jsonc вместо существующего
+pnpm db:remote                                 # создаст таблицы
+```
 
 ---
 
