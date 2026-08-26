@@ -11,6 +11,7 @@
 | `produce.py` | Конвейер: анализ → распознавание → чистка звука → цветокор → субтитры и оверлеи → QA |
 | `openmontage-ru-fixes.patch` | Четыре правки в апстрим OpenMontage, без которых русский не работает |
 | `cyrillicFonts.ts` | Модуль загрузки кириллических шрифтов для Remotion |
+| `build_cyrillic_fonts.py` | Ставит модуль на место и генерирует из `fonts/` вшитые в бандл base64-данные |
 | `fonts/` | Кириллические сабсеты Montserrat, Inter, Playfair Display (woff2, ~90 КБ) |
 
 ## Что пришлось починить в OpenMontage
@@ -47,13 +48,22 @@ cd OpenMontage && make setup
 # распознавание речи и трекинг лица
 .venv/bin/python -m pip install faster-whisper opencv-python-headless "mediapipe==0.10.14"
 
-# правки под кириллицу
-git apply /path/to/openmontage-ru-fixes.patch
-cp -r /path/to/fonts remotion-composer/public/fonts
+# правки под кириллицу: сначала шрифтовые модули, потом патч
+python /path/to/openmontage-ru/build_cyrillic_fonts.py --composer remotion-composer
+git apply /path/to/openmontage-ru/openmontage-ru-fixes.patch
 ```
 
-Шрифтовые данные для бандла генерируются из `public/fonts/` в
-`remotion-composer/src/lib/cyrillicFontData.ts` (base64 woff2).
+Порядок важен. Патч правит 23 файла композиций так, что они импортируют
+`./lib/cyrillicFonts`, а сам этот модуль в патче не лежит — его ставит
+`build_cyrillic_fonts.py`. Скрипт кладёт `cyrillicFonts.ts` в
+`remotion-composer/src/lib/`, генерирует рядом `cyrillicFontData.ts`
+(base64-сабсеты, вшитые в бандл) и копирует woff2 в `public/fonts/`.
+
+Проверить, что всё встало:
+
+```bash
+cd remotion-composer && npx tsc --noEmit -p tsconfig.json
+```
 
 Нужны также `ffmpeg`, `Node.js 18+` и Chromium для Remotion
 (`REMOTION_BROWSER_EXECUTABLE`, если Remotion не может скачать свой).

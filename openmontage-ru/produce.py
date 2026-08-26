@@ -21,6 +21,7 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -62,14 +63,31 @@ def probe(path: Path) -> dict:
     }
 
 
+def _transcript_fingerprint(src: Path, model: str, language: str) -> str:
+    """Identify the exact (clip, model, language) a cached transcript belongs to."""
+    digest = hashlib.sha256()
+    with src.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    digest.update(f"|{model}|{language}".encode())
+    return digest.hexdigest()
+
+
 def stage_transcribe(src: Path, outdir: Path, model: str, language: str) -> dict:
     """Word-level Russian transcript via faster-whisper (offline, free)."""
     from tools.analysis.transcriber import Transcriber
 
     cache = outdir / "transcript.json"
+    # Reusing an --outdir across clips, models or languages must not burn the
+    # previous run's text and word timings onto the new video, so the cache is
+    # only good for the exact input it was produced from.
+    fingerprint = _transcript_fingerprint(src, model, language)
     if cache.exists():
-        log("transcribe", f"reusing {cache.name}")
-        return json.loads(cache.read_text(encoding="utf-8"))
+        cached = json.loads(cache.read_text(encoding="utf-8"))
+        if cached.get("_fingerprint") == fingerprint:
+            log("transcribe", f"reusing {cache.name}")
+            return cached
+        log("transcribe", f"{cache.name} is from a different input — re-transcribing")
 
     started = time.time()
     result = Transcriber().execute({
@@ -81,13 +99,13 @@ def stage_transcribe(src: Path, outdir: Path, model: str, language: str) -> dict
     if not result.success:
         raise SystemExit(f"transcription failed: {result.error}")
 
-    cache.write_text(
-        json.dumps(result.data, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
-    segs = result.data["segments"]
+    data = dict(result.data)
+    data["_fingerprint"] = fingerprint
+    cache.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    segs = data["segments"]
     words = sum(len(s.get("words") or []) for s in segs)
     log("transcribe", f"{len(segs)} segments / {words} words in {time.time()-started:.0f}s")
-    return result.data
+    return data
 
 
 def stage_subtitles(transcript: dict, outdir: Path) -> Path:
