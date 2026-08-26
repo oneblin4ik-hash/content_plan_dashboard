@@ -1,0 +1,631 @@
+diff --git a/remotion-composer/src/CinematicRenderer.tsx b/remotion-composer/src/CinematicRenderer.tsx
+index 926c59c..0bfac77 100644
+--- a/remotion-composer/src/CinematicRenderer.tsx
++++ b/remotion-composer/src/CinematicRenderer.tsx
+@@ -1,5 +1,5 @@
++import { displayFamily } from "./lib/cyrillicFonts";
+ import React from "react";
+-import { loadFont } from "@remotion/google-fonts/SpaceGrotesk";
+ import {
+   AbsoluteFill,
+   Audio,
+@@ -18,10 +18,7 @@ import { resolveAsset } from "./lib/resolveAsset";
+ 
+ const FPS = 30;
+ 
+-const { fontFamily } = loadFont("normal", {
+-  weights: ["400", "500", "700"],
+-  subsets: ["latin"],
+-});
++const fontFamily = displayFamily;
+ 
+ const toneGradient = (tone: CinematicTone) => {
+   switch (tone) {
+diff --git a/remotion-composer/src/CollageBurst.tsx b/remotion-composer/src/CollageBurst.tsx
+index 77cf0c7..31e0248 100644
+--- a/remotion-composer/src/CollageBurst.tsx
++++ b/remotion-composer/src/CollageBurst.tsx
+@@ -1,3 +1,4 @@
++import { serifFamily } from "./lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   Img,
+@@ -10,17 +11,10 @@ import {
+   useVideoConfig,
+ } from "remotion";
+ import React from "react";
+-import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
+ import { resolveAsset } from "./lib/resolveAsset";
+ 
+-const { fontFamily: playfairFamily } = loadPlayfair("normal", {
+-  weights: ["400", "700"],
+-  subsets: ["latin"],
+-});
+-const { fontFamily: playfairItalic } = loadPlayfair("italic", {
+-  weights: ["400", "700"],
+-  subsets: ["latin"],
+-});
++const playfairFamily = serifFamily;
++const playfairItalic = serifFamily;
+ 
+ export type CollageTransition =
+   | "pop"
+diff --git a/remotion-composer/src/Explainer.tsx b/remotion-composer/src/Explainer.tsx
+index 99dd637..d5e47e6 100644
+--- a/remotion-composer/src/Explainer.tsx
++++ b/remotion-composer/src/Explainer.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily } from "./lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   Audio,
+@@ -9,7 +10,6 @@ import {
+   useCurrentFrame,
+   useVideoConfig,
+ } from "remotion";
+-import { loadFont } from "@remotion/google-fonts/SpaceGrotesk";
+ import { TextCard } from "./components/TextCard";
+ import { StatCard } from "./components/StatCard";
+ import { CalloutBox } from "./components/CalloutBox";
+@@ -35,10 +35,7 @@ import type { ParticleType } from "./components/ParticleOverlay";
+ import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
+ 
+ // Load Space Grotesk font for cinematic typography
+-const { fontFamily } = loadFont("normal", {
+-  weights: ["400", "700"],
+-  subsets: ["latin"],
+-});
++const fontFamily = displayFamily;
+ 
+ // ---------------------------------------------------------------------------
+ // Animated Background — Gradient Mesh + Floating Orbs
+diff --git a/remotion-composer/src/LyricOverlay.tsx b/remotion-composer/src/LyricOverlay.tsx
+index 287110f..e9fedb2 100644
+--- a/remotion-composer/src/LyricOverlay.tsx
++++ b/remotion-composer/src/LyricOverlay.tsx
+@@ -1,3 +1,4 @@
++import { serifFamily } from "./lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   Audio,
+@@ -7,13 +8,9 @@ import {
+   useVideoConfig,
+ } from "remotion";
+ import React from "react";
+-import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
+ import { resolveAsset } from "./lib/resolveAsset";
+ 
+-const { fontFamily: playfairItalic } = loadPlayfair("italic", {
+-  weights: ["400", "700"],
+-  subsets: ["latin"],
+-});
++const playfairItalic = serifFamily;
+ 
+ export interface Lyric {
+   text: string;
+diff --git a/remotion-composer/src/Root.tsx b/remotion-composer/src/Root.tsx
+index d837f14..d614102 100644
+--- a/remotion-composer/src/Root.tsx
++++ b/remotion-composer/src/Root.tsx
+@@ -46,8 +46,8 @@ export const THEMES: Record<string, ThemeConfig> = {
+     surfaceColor: "#F9FAFB",
+     textColor: "#1F2937",
+     mutedTextColor: "#6B7280",
+-    headingFont: "Inter",
+-    bodyFont: "Inter",
++    headingFont: "Inter, 'OM Text', system-ui, sans-serif",
++    bodyFont: "Inter, 'OM Text', system-ui, sans-serif",
+     monoFont: "JetBrains Mono",
+     chartColors: ["#2563EB", "#F59E0B", "#10B981", "#8B5CF6", "#EC4899", "#06B6D4"],
+     springConfig: { damping: 20, stiffness: 120, mass: 1 },
+@@ -62,8 +62,8 @@ export const THEMES: Record<string, ThemeConfig> = {
+     surfaceColor: "#1E293B",
+     textColor: "#F8FAFC",
+     mutedTextColor: "#94A3B8",
+-    headingFont: "Space Grotesk",
+-    bodyFont: "Space Grotesk",
++    headingFont: "'OM Display', Montserrat, 'Space Grotesk', system-ui, sans-serif",
++    bodyFont: "'OM Display', Montserrat, 'Space Grotesk', system-ui, sans-serif",
+     monoFont: "Fira Code",
+     chartColors: ["#7C3AED", "#EC4899", "#06B6D4", "#F59E0B", "#10B981", "#EF4444"],
+     springConfig: { damping: 12, stiffness: 80, mass: 1 },
+@@ -78,8 +78,8 @@ export const THEMES: Record<string, ThemeConfig> = {
+     surfaceColor: "#FFFFFF",
+     textColor: "#1A1A2E",
+     mutedTextColor: "#6B7280",
+-    headingFont: "IBM Plex Sans",
+-    bodyFont: "IBM Plex Sans",
++    headingFont: "IBM Plex Sans, 'OM Text', system-ui, sans-serif",
++    bodyFont: "IBM Plex Sans, 'OM Text', system-ui, sans-serif",
+     monoFont: "IBM Plex Mono",
+     chartColors: ["#E94560", "#1A1A2E", "#0F3460", "#9CA3AF"],
+     springConfig: { damping: 25, stiffness: 150, mass: 1 },
+diff --git a/remotion-composer/src/TitledVideo.tsx b/remotion-composer/src/TitledVideo.tsx
+index 0f710ca..f6e33f8 100644
+--- a/remotion-composer/src/TitledVideo.tsx
++++ b/remotion-composer/src/TitledVideo.tsx
+@@ -1,3 +1,4 @@
++import { serifFamily } from "./lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   CalculateMetadataFunction,
+@@ -9,15 +10,11 @@ import {
+   useVideoConfig,
+ } from "remotion";
+ import { getVideoMetadata } from "@remotion/media-utils";
+-import { loadFont } from "@remotion/google-fonts/PlayfairDisplay";
+ import { resolveAsset } from "./lib/resolveAsset";
+ 
+ // Editorial serif for the tagline — Playfair Display at its boldest weight.
+ // Loaded once at module scope so every render reuses the same font face.
+-const { fontFamily } = loadFont("normal", {
+-  weights: ["400", "700", "900"],
+-  subsets: ["latin"],
+-});
++const fontFamily = serifFamily;
+ 
+ export type TitledVideoProps = {
+   videoSrc: string;
+diff --git a/remotion-composer/src/components/CalloutBox.tsx b/remotion-composer/src/components/CalloutBox.tsx
+index 1609739..12503d6 100644
+--- a/remotion-composer/src/components/CalloutBox.tsx
++++ b/remotion-composer/src/components/CalloutBox.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -40,7 +41,7 @@ export const CalloutBox: React.FC<CalloutBoxProps> = ({
+   borderColor,
+   backgroundColor,
+   textColor = "#1F2937",
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   fontSize = 32,
+   titleFontSize = 38,
+   containerBackgroundColor = "#FFFFFF",
+diff --git a/remotion-composer/src/components/CaptionOverlay.tsx b/remotion-composer/src/components/CaptionOverlay.tsx
+index 0142d68..399a590 100644
+--- a/remotion-composer/src/components/CaptionOverlay.tsx
++++ b/remotion-composer/src/components/CaptionOverlay.tsx
+@@ -1,3 +1,5 @@
++import React from "react";
++import { displayFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   Sequence,
+@@ -110,23 +112,30 @@ const PageRenderer: React.FC<{
+             const isActive = w.startMs <= currentMs && w.endMs > currentMs;
+             const isPast = w.endMs <= currentMs;
+             return (
+-              <span
+-                key={`${w.startMs}-${i}`}
+-                style={{
+-                  // Keep each word unbroken so lines wrap only at word
+-                  // boundaries. For space-delimited text this matches the
+-                  // previous behavior; for CJK it prevents mid-word breaks.
+-                  display: "inline-block",
+-                  whiteSpace: "nowrap",
+-                  color: isActive ? highlightColor : isPast ? color : `${color}99`,
+-                  transition: "none", // CSS transitions forbidden in Remotion
+-                  textShadow: isActive
+-                    ? `0 0 20px ${highlightColor}66, 0 2px 4px rgba(0,0,0,0.5)`
+-                    : "0 2px 4px rgba(0,0,0,0.5)",
+-                }}
+-              >
+-                {w.word}{i < page.words.length - 1 ? wordSeparator : ""}
+-              </span>
++              // The separator sits OUTSIDE the word span on purpose. Inside an
++              // inline-block with white-space: nowrap a trailing space is
++              // trimmed by the browser, which glues adjacent words together.
++              // The parent span carries white-space: pre-wrap, so a separator
++              // placed here survives.
++              <React.Fragment key={`${w.startMs}-${i}`}>
++                <span
++                  style={{
++                    // Keep each word unbroken so lines wrap only at word
++                    // boundaries. For space-delimited text this matches the
++                    // previous behavior; for CJK it prevents mid-word breaks.
++                    display: "inline-block",
++                    whiteSpace: "nowrap",
++                    color: isActive ? highlightColor : isPast ? color : `${color}99`,
++                    transition: "none", // CSS transitions forbidden in Remotion
++                    textShadow: isActive
++                      ? `0 0 20px ${highlightColor}66, 0 2px 4px rgba(0,0,0,0.5)`
++                      : "0 2px 4px rgba(0,0,0,0.5)",
++                  }}
++                >
++                  {w.word}
++                </span>
++                {i < page.words.length - 1 ? wordSeparator : ""}
++              </React.Fragment>
+             );
+           })}
+         </span>
+@@ -142,7 +151,7 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+   color = "#F8FAFC",
+   highlightColor = "#22D3EE",
+   backgroundColor = "rgba(15, 23, 42, 0.75)",
+-  fontFamily = "Space Grotesk, Inter, system-ui, sans-serif",
++  fontFamily = displayFamily,
+   wordSeparator = " ",
+ }) => {
+   const { fps } = useVideoConfig();
+diff --git a/remotion-composer/src/components/ComparisonCard.tsx b/remotion-composer/src/components/ComparisonCard.tsx
+index 0ec43ef..ee9ffec 100644
+--- a/remotion-composer/src/components/ComparisonCard.tsx
++++ b/remotion-composer/src/components/ComparisonCard.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -40,7 +41,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
+   backgroundColor = "#FFFFFF",
+   cardBackgroundColor = "#F3F4F6",
+   textColor = "#1F2937",
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   titleFontSize = 44,
+   labelFontSize = 28,
+   valueFontSize = 72,
+diff --git a/remotion-composer/src/components/EndTag.tsx b/remotion-composer/src/components/EndTag.tsx
+index ab785c5..5e45992 100644
+--- a/remotion-composer/src/components/EndTag.tsx
++++ b/remotion-composer/src/components/EndTag.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -137,8 +138,7 @@ export const EndTag: React.FC<EndTagProps> = ({
+         {/* The tag line */}
+         <div
+           style={{
+-            fontFamily:
+-              "'Space Grotesk', 'Inter', 'Helvetica Neue', system-ui, sans-serif",
++            fontFamily: displayFamily,
+             fontWeight: 900,
+             fontSize: 84,
+             letterSpacing: "0.12em",
+diff --git a/remotion-composer/src/components/HeroTitle.tsx b/remotion-composer/src/components/HeroTitle.tsx
+index e22e4bd..82660d3 100644
+--- a/remotion-composer/src/components/HeroTitle.tsx
++++ b/remotion-composer/src/components/HeroTitle.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -54,7 +55,7 @@ export const HeroTitle: React.FC<HeroTitleProps> = ({
+           style={{
+             fontSize: 72,
+             fontWeight: 800,
+-            fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++            fontFamily: displayFamily,
+             lineHeight: 1.2,
+             display: "flex",
+             justifyContent: "center",
+@@ -101,7 +102,7 @@ export const HeroTitle: React.FC<HeroTitleProps> = ({
+               fontSize: 28,
+               fontWeight: 400,
+               color: subtitleColor,
+-              fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++              fontFamily: displayFamily,
+               letterSpacing: "0.1em",
+               textTransform: "uppercase",
+             }}
+diff --git a/remotion-composer/src/components/ProgressBar.tsx b/remotion-composer/src/components/ProgressBar.tsx
+index 30e6a78..5f690f1 100644
+--- a/remotion-composer/src/components/ProgressBar.tsx
++++ b/remotion-composer/src/components/ProgressBar.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -42,7 +43,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
+   segments,
+   height = 32,
+   borderRadius = 8,
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   textColor = "#1F2937",
+   labelFontSize = 36,
+   percentageFontSize = 28,
+diff --git a/remotion-composer/src/components/ProviderChip.tsx b/remotion-composer/src/components/ProviderChip.tsx
+index 0f11230..85f270e 100644
+--- a/remotion-composer/src/components/ProviderChip.tsx
++++ b/remotion-composer/src/components/ProviderChip.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily, textFamily } from "../lib/cyrillicFonts";
+ import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+ 
+ /**
+@@ -70,7 +71,7 @@ export const ProviderChip: React.FC<ProviderChipProps> = ({
+           style={{
+             fontSize: 16,
+             color: "rgba(255,255,255,0.6)",
+-            fontFamily: "Inter, sans-serif",
++            fontFamily: textFamily,
+             fontWeight: 500,
+             letterSpacing: 1.5,
+             textTransform: "uppercase",
+@@ -85,7 +86,7 @@ export const ProviderChip: React.FC<ProviderChipProps> = ({
+             border: `2px solid ${accentColor}`,
+             borderRadius: 999,
+             color: accentColor,
+-            fontFamily: "'Space Grotesk', Inter, sans-serif",
++            fontFamily: displayFamily,
+             fontWeight: 700,
+             fontSize: 28,
+             letterSpacing: 0.3,
+diff --git a/remotion-composer/src/components/ScreenshotScene.tsx b/remotion-composer/src/components/ScreenshotScene.tsx
+index b1a2407..d04f096 100644
+--- a/remotion-composer/src/components/ScreenshotScene.tsx
++++ b/remotion-composer/src/components/ScreenshotScene.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   Img,
+@@ -383,7 +384,7 @@ const OverlayForStep: React.FC<OverlayProps> = ({
+           display: "flex",
+           alignItems: "center",
+           paddingLeft: Math.round(rect.w * 0.012),
+-          fontFamily: "Inter, -apple-system, sans-serif",
++          fontFamily: textFamily,
+           fontSize: fontPx,
+           color: step.color ?? "#E5E7EB",
+           pointerEvents: "none",
+@@ -462,7 +463,7 @@ const OverlayForStep: React.FC<OverlayProps> = ({
+           border: `1px solid ${border}`,
+           borderRadius: Math.round(rect.w * 0.008),
+           padding: `${Math.round(rect.h * 0.015)}px ${Math.round(rect.w * 0.012)}px`,
+-          fontFamily: "Inter, -apple-system, sans-serif",
++          fontFamily: textFamily,
+           fontSize: fontPx,
+           color: "#F1F5F9",
+           lineHeight: 1.5,
+@@ -635,7 +636,7 @@ const OverlayForStep: React.FC<OverlayProps> = ({
+           width: maxW,
+           background: color,
+           color: "#0B0F1A",
+-          fontFamily: "Inter, -apple-system, sans-serif",
++          fontFamily: textFamily,
+           fontWeight: 600,
+           fontSize: fontPx,
+           lineHeight: 1.35,
+diff --git a/remotion-composer/src/components/SectionTitle.tsx b/remotion-composer/src/components/SectionTitle.tsx
+index c244f2c..4af4b55 100644
+--- a/remotion-composer/src/components/SectionTitle.tsx
++++ b/remotion-composer/src/components/SectionTitle.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -71,7 +72,7 @@ export const SectionTitle: React.FC<SectionTitleProps> = ({
+             fontSize: 28,
+             fontWeight: 700,
+             color: textColor,
+-            fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++            fontFamily: displayFamily,
+             letterSpacing: "0.05em",
+             textTransform: "uppercase",
+             textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+@@ -85,7 +86,7 @@ export const SectionTitle: React.FC<SectionTitleProps> = ({
+               fontSize: 18,
+               fontWeight: 400,
+               color: accentColor,
+-              fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++              fontFamily: displayFamily,
+               marginTop: 4,
+               opacity: spring({
+                 frame: frame - 8,
+diff --git a/remotion-composer/src/components/StatCard.tsx b/remotion-composer/src/components/StatCard.tsx
+index dc228ed..e91124b 100644
+--- a/remotion-composer/src/components/StatCard.tsx
++++ b/remotion-composer/src/components/StatCard.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from "remotion";
+ 
+ interface StatCardProps {
+@@ -50,7 +51,7 @@ export const StatCard: React.FC<StatCardProps> = ({
+             transform: `scale(${scale})`,
+             fontSize: statFontSize,
+             color: accentColor,
+-            fontFamily: "Inter, system-ui, sans-serif",
++            fontFamily: textFamily,
+             fontWeight: 800,
+             lineHeight: 1.1,
+           }}
+@@ -63,7 +64,7 @@ export const StatCard: React.FC<StatCardProps> = ({
+               opacity: subtitleOpacity,
+               fontSize: subtitleFontSize,
+               color,
+-              fontFamily: "Inter, system-ui, sans-serif",
++              fontFamily: textFamily,
+               fontWeight: 400,
+               marginTop: 16,
+             }}
+diff --git a/remotion-composer/src/components/StatReveal.tsx b/remotion-composer/src/components/StatReveal.tsx
+index a1b7b27..dda247d 100644
+--- a/remotion-composer/src/components/StatReveal.tsx
++++ b/remotion-composer/src/components/StatReveal.tsx
+@@ -1,3 +1,4 @@
++import { displayFamily } from "../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -70,7 +71,7 @@ export const StatReveal: React.FC<StatRevealProps> = ({
+             fontSize: 96,
+             fontWeight: 800,
+             color: accentColor,
+-            fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++            fontFamily: displayFamily,
+             lineHeight: 1,
+             textShadow: `0 0 ${interpolate(glow, [0, 1], [0, 30])}px ${accentColor}66, 0 4px 12px rgba(0,0,0,0.5)`,
+           }}
+@@ -83,7 +84,7 @@ export const StatReveal: React.FC<StatRevealProps> = ({
+               fontSize: 22,
+               fontWeight: 500,
+               color: textColor,
+-              fontFamily: "Space Grotesk, Inter, system-ui, sans-serif",
++              fontFamily: displayFamily,
+               marginTop: 8,
+               opacity: spring({
+                 frame: frame - 10,
+diff --git a/remotion-composer/src/components/TerminalScene.tsx b/remotion-composer/src/components/TerminalScene.tsx
+index 96c8626..2526e33 100644
+--- a/remotion-composer/src/components/TerminalScene.tsx
++++ b/remotion-composer/src/components/TerminalScene.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+ 
+ /**
+@@ -150,7 +151,7 @@ export const TerminalScene: React.FC<TerminalSceneProps> = ({
+               textAlign: "center",
+               color: "#8E8E93",
+               fontSize: 16,
+-              fontFamily: "Inter, sans-serif",
++              fontFamily: textFamily,
+             }}
+           >
+             {title}
+@@ -247,7 +248,7 @@ export const TerminalScene: React.FC<TerminalSceneProps> = ({
+                   background: pill.color,
+                   color: "#0B0F1A",
+                   borderRadius: 999,
+-                  fontFamily: "Inter, sans-serif",
++                  fontFamily: textFamily,
+                   fontWeight: 700,
+                   fontSize: 20,
+                   letterSpacing: 0.2,
+diff --git a/remotion-composer/src/components/TextCard.tsx b/remotion-composer/src/components/TextCard.tsx
+index 6368fe4..55eacca 100644
+--- a/remotion-composer/src/components/TextCard.tsx
++++ b/remotion-composer/src/components/TextCard.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../lib/cyrillicFonts";
+ import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from "remotion";
+ 
+ interface TextCardProps {
+@@ -39,7 +40,7 @@ export const TextCard: React.FC<TextCardProps> = ({
+           transform: `scale(${scale})`,
+           fontSize,
+           color,
+-          fontFamily: "Inter, system-ui, sans-serif",
++          fontFamily: textFamily,
+           fontWeight: 700,
+           textAlign: "center",
+           maxWidth: "80%",
+diff --git a/remotion-composer/src/components/charts/BarChart.tsx b/remotion-composer/src/components/charts/BarChart.tsx
+index 386d394..302197b 100644
+--- a/remotion-composer/src/components/charts/BarChart.tsx
++++ b/remotion-composer/src/components/charts/BarChart.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -31,7 +32,7 @@ export const BarChart: React.FC<BarChartProps> = ({
+   data,
+   title,
+   colors = ["#2563EB", "#F59E0B", "#10B981", "#EC4899", "#06B6D4", "#8B5CF6"],
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   textColor = "#1F2937",
+   backgroundColor = "#FFFFFF",
+   gridColor = "#E5E7EB",
+diff --git a/remotion-composer/src/components/charts/KPIGrid.tsx b/remotion-composer/src/components/charts/KPIGrid.tsx
+index 6c16a7a..bada9ea 100644
+--- a/remotion-composer/src/components/charts/KPIGrid.tsx
++++ b/remotion-composer/src/components/charts/KPIGrid.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -36,7 +37,7 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
+   title,
+   columns = 3,
+   colors = ["#2563EB", "#F59E0B", "#10B981", "#EC4899"],
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   textColor = "#1F2937",
+   backgroundColor = "#FFFFFF",
+   cardBackgroundColor = "#F9FAFB",
+diff --git a/remotion-composer/src/components/charts/LineChart.tsx b/remotion-composer/src/components/charts/LineChart.tsx
+index 66584a3..1d17386 100644
+--- a/remotion-composer/src/components/charts/LineChart.tsx
++++ b/remotion-composer/src/components/charts/LineChart.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -40,7 +41,7 @@ export const LineChart: React.FC<LineChartProps> = ({
+   series,
+   title,
+   colors = ["#2563EB", "#F59E0B", "#10B981", "#EC4899", "#06B6D4", "#8B5CF6"],
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   textColor = "#1F2937",
+   backgroundColor = "#FFFFFF",
+   gridColor = "#E5E7EB",
+diff --git a/remotion-composer/src/components/charts/PieChart.tsx b/remotion-composer/src/components/charts/PieChart.tsx
+index 6286388..b666adb 100644
+--- a/remotion-composer/src/components/charts/PieChart.tsx
++++ b/remotion-composer/src/components/charts/PieChart.tsx
+@@ -1,3 +1,4 @@
++import { textFamily } from "../../lib/cyrillicFonts";
+ import {
+   AbsoluteFill,
+   interpolate,
+@@ -32,7 +33,7 @@ export const PieChart: React.FC<PieChartProps> = ({
+   data,
+   title,
+   colors = ["#2563EB", "#F59E0B", "#10B981", "#EC4899", "#06B6D4", "#8B5CF6"],
+-  fontFamily = "Inter, system-ui, sans-serif",
++  fontFamily = textFamily,
+   textColor = "#1F2937",
+   backgroundColor = "#FFFFFF",
+   donut = false,
+diff --git a/tools/analysis/face_tracker.py b/tools/analysis/face_tracker.py
+index f9ed63e..6745a4d 100644
+--- a/tools/analysis/face_tracker.py
++++ b/tools/analysis/face_tracker.py
+@@ -117,9 +117,14 @@ class FaceTracker(BaseTool):
+     def _has_mediapipe(self) -> bool:
+         try:
+             import mediapipe  # noqa: F401
+-            return True
+         except ImportError:
+             return False
++        # mediapipe 1.0 dropped the legacy mp.solutions API this tool tracks
++        # faces with. Importing successfully is not enough — without it the
++        # OpenCV Haar path is the working one.
++        return hasattr(mediapipe, "solutions") and hasattr(
++            mediapipe.solutions, "face_detection"
++        )
+ 
+     def _has_opencv(self) -> bool:
+         try:
+diff --git a/tools/video/remotion_caption_burn.py b/tools/video/remotion_caption_burn.py
+index 35ff6ba..ae5e79e 100644
+--- a/tools/video/remotion_caption_burn.py
++++ b/tools/video/remotion_caption_burn.py
+@@ -312,7 +312,9 @@ class RemotionCaptionBurn(BaseTool):
+ 
+         # Build props JSON
+         props = {
+-            "videoSrc": f"public/talking-head/{video_filename}",
++            # staticFile() resolves relative to public/, and rejects the
++            # "public/" prefix outright — pass the path without it.
++            "videoSrc": f"talking-head/{video_filename}",
+             "captions": captions,
+             "overlays": overlays or [],
+             "wordsPerPage": words_per_page,
