@@ -34,7 +34,7 @@ const loadAll = () => {
   // render those tabs compete for CPU with frame rasterization, and the 28s
   // default is not enough headroom on a small machine.
   const handle = delayRender("Loading local Cyrillic fonts", {
-    timeoutInMilliseconds: 120000,
+    timeoutInMilliseconds: 300000,
   });
   Promise.all(
     EMBEDDED_FACES.map(async (f) => {
@@ -57,5 +57,7 @@ loadAll();
 export const displayFamily = '"OM Display", Montserrat, "Noto Sans", system-ui, sans-serif';
 /** UI/body sans with Cyrillic. */
 export const textFamily = '"OM Text", Inter, "Noto Sans", system-ui, sans-serif';
+/** Condensed sans with Cyrillic — word-by-word captions in short-form video. */
+export const condensedFamily = '"OM Condensed", Oswald, "Roboto Condensed", sans-serif';
 /** Serif with Cyrillic. Stands in for Playfair Display. */
 export const serifFamily = '"OM Serif", "Playfair Display", "Noto Serif", Georgia, serif';

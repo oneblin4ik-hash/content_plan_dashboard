@@ -11,8 +11,10 @@
 | `produce.py` | Конвейер: анализ → распознавание → чистка звука → цветокор → субтитры и оверлеи → QA |
 | `openmontage-ru-fixes.patch` | Четыре правки в апстрим OpenMontage, без которых русский не работает |
 | `cyrillicFonts.ts` | Модуль загрузки кириллических шрифтов для Remotion |
-| `build_cyrillic_fonts.py` | Ставит модуль на место и генерирует из `fonts/` вшитые в бандл base64-данные |
-| `fonts/` | Кириллические сабсеты Montserrat, Inter, Playfair Display (woff2, ~90 КБ) |
+| `build_cyrillic_fonts.py` | Ставит модуль и `HookTitle.tsx` на место, генерирует из `fonts/` вшитые в бандл base64-данные |
+| `HookTitle.tsx` | Титр-крючок: строки появляются по одной, обводка, красный акцент |
+| `assemble_takes.example.py` | Пример сборки ролика из отобранных дублей с покадровыми субтитрами |
+| `fonts/` | Кириллические сабсеты Montserrat, Inter, Playfair Display, Oswald (woff2, ~110 КБ) |
 
 ## Что пришлось починить в OpenMontage
 
@@ -95,6 +97,45 @@ python produce.py video.mp4 --outdir out --overlays overlays.json
 Доступные типы: `hero_title`, `section_title`, `text_card`, `stat_card`,
 `stat_reveal`, `callout`, `comparison`, `bar_chart`, `line_chart`,
 `pie_chart`, `kpi_grid`.
+
+### Стиль субтитров коротких видео
+
+Композиция `TalkingHead` принимает параметры внешнего вида субтитров.
+Значения ниже воспроизводят типовой вид Reels: одно слово на экране,
+капсом, узким гротеском, без плашки, на 63% высоты кадра.
+
+```json
+{
+  "wordsPerPage": 1,
+  "fontSize": 72,
+  "captionFontFamily": "\"OM Condensed\", Oswald, sans-serif",
+  "captionColor": "#FFFFFF",
+  "captionBackgroundColor": "transparent",
+  "captionVerticalPosition": 0.63,
+  "captionTextTransform": "uppercase",
+  "captionDimUpcoming": false,
+  "captionInstantIn": true
+}
+```
+
+`captionInstantIn` обязателен для такого стиля: пружинная анимация появления
+занимает около 15 кадров, а слово держится на экране 8–10, поэтому без неё
+слово не успевает проявиться и выглядит полупрозрачным.
+
+Титр-крючок задаётся отдельным параметром `hookTitle`:
+
+```json
+{
+  "hookTitle": {
+    "in_seconds": 0.15, "out_seconds": 4.4, "top": 0.055, "strokeWidth": 6,
+    "lines": [
+      {"text": "ПОСЛЕ 6", "delay": 0.0,  "fontSize": 86},
+      {"text": "ЕСТЬ",    "delay": 0.55, "fontSize": 100},
+      {"text": "НЕЛЬЗЯ",  "delay": 1.1,  "fontSize": 100, "color": "#FD3233"}
+    ]
+  }
+}
+```
 
 ### Исправление распознанных слов
 

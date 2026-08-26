@@ -34,6 +34,10 @@ FACES: list[tuple[str, str, str, str]] = [
     ("OM Text", "Inter-900.woff2", "900", "normal"),
     ("OM Serif", "PlayfairDisplay-700.woff2", "700", "normal"),
     ("OM Serif", "PlayfairDisplay-700-italic.woff2", "700", "italic"),
+    # Узкий гротеск — типовой шрифт покадровых субтитров в коротких видео.
+    ("OM Condensed", "Oswald-500.woff2", "500", "normal"),
+    ("OM Condensed", "Oswald-600.woff2", "600", "normal"),
+    ("OM Condensed", "Oswald-700.woff2", "700", "normal"),
 ]
 
 HEADER = """/**
@@ -105,6 +109,15 @@ def main() -> int:
 
     out = lib / "cyrillicFontData.ts"
     out.write_text("".join(chunks), encoding="utf-8")
+
+    # HookTitle is a new component, so it cannot ride in a `git diff` patch
+    # either — install it the same way as the font loader.
+    hook_src = HERE / "HookTitle.tsx"
+    if hook_src.is_file():
+        (args.composer / "src" / "components" / "HookTitle.tsx").write_text(
+            hook_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        print(f"HookTitle.tsx        -> {args.composer / 'src' / 'components' / 'HookTitle.tsx'}")
 
     public_fonts = args.composer / "public" / "fonts"
     public_fonts.mkdir(parents=True, exist_ok=True)

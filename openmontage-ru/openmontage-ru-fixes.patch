@@ -140,6 +140,81 @@ index d837f14..d614102 100644
      monoFont: "IBM Plex Mono",
      chartColors: ["#E94560", "#1A1A2E", "#0F3460", "#9CA3AF"],
      springConfig: { damping: 25, stiffness: 150, mass: 1 },
+diff --git a/remotion-composer/src/TalkingHead.tsx b/remotion-composer/src/TalkingHead.tsx
+index 6f3b63c..f5ad0fd 100644
+--- a/remotion-composer/src/TalkingHead.tsx
++++ b/remotion-composer/src/TalkingHead.tsx
+@@ -17,6 +17,7 @@ import { LineChart } from "./components/charts/LineChart";
+ import { PieChart } from "./components/charts/PieChart";
+ import { KPIGrid } from "./components/charts/KPIGrid";
+ import { HeroTitle } from "./components/HeroTitle";
++import { HookTitle, HookTitleProps } from "./components/HookTitle";
+ import { SectionTitle } from "./components/SectionTitle";
+ import { StatReveal } from "./components/StatReveal";
+ 
+@@ -308,6 +309,13 @@ export interface TalkingHeadProps {
+   captionFontFamily?: string;
+   // Pass "" for CJK captions (no inter-word spacing); defaults to " ".
+   captionWordSeparator?: string;
++  captionVerticalPosition?: number;
++  captionTextTransform?: "none" | "uppercase" | "lowercase";
++  captionTextShadow?: string;
++  captionDimUpcoming?: boolean;
++  captionInstantIn?: boolean;
++  /** Opening hook card that builds line by line, with its own timing. */
++  hookTitle?: HookTitleProps & { in_seconds?: number; out_seconds?: number };
+ }
+ 
+ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+@@ -321,6 +329,12 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+   captionBackgroundColor = "rgba(0, 0, 0, 0.65)",
+   captionFontFamily,
+   captionWordSeparator,
++  captionVerticalPosition,
++  captionTextTransform,
++  captionTextShadow,
++  captionDimUpcoming,
++  captionInstantIn,
++  hookTitle,
+ }) => {
+   const { fps } = useVideoConfig();
+ 
+@@ -349,6 +363,21 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+         );
+       })}
+ 
++      {/* Layer 2b: Opening hook card */}
++      {hookTitle ? (
++        <Sequence
++          from={Math.round((hookTitle.in_seconds ?? 0) * fps)}
++          durationInFrames={Math.max(
++            1,
++            Math.round(
++              ((hookTitle.out_seconds ?? 4) - (hookTitle.in_seconds ?? 0)) * fps
++            )
++          )}
++        >
++          <HookTitle {...hookTitle} />
++        </Sequence>
++      ) : null}
++
+       {/* Layer 3: Captions (topmost — always visible above overlays) */}
+       <CaptionOverlay
+         words={captions}
+@@ -359,6 +388,13 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+         color={captionColor}
+         {...(captionFontFamily ? { fontFamily: captionFontFamily } : {})}
+         {...(captionWordSeparator !== undefined ? { wordSeparator: captionWordSeparator } : {})}
++        {...(captionVerticalPosition !== undefined
++          ? { verticalPosition: captionVerticalPosition }
++          : {})}
++        {...(captionTextTransform ? { textTransform: captionTextTransform } : {})}
++        {...(captionTextShadow !== undefined ? { textShadow: captionTextShadow } : {})}
++        {...(captionDimUpcoming !== undefined ? { dimUpcoming: captionDimUpcoming } : {})}
++        {...(captionInstantIn !== undefined ? { instantIn: captionInstantIn } : {})}
+       />
+     </AbsoluteFill>
+   );
 diff --git a/remotion-composer/src/TitledVideo.tsx b/remotion-composer/src/TitledVideo.tsx
 index 0f710ca..f6e33f8 100644
 --- a/remotion-composer/src/TitledVideo.tsx
@@ -185,7 +260,7 @@ index 1609739..12503d6 100644
    titleFontSize = 38,
    containerBackgroundColor = "#FFFFFF",
 diff --git a/remotion-composer/src/components/CaptionOverlay.tsx b/remotion-composer/src/components/CaptionOverlay.tsx
-index 0142d68..399a590 100644
+index 0142d68..6e1e70f 100644
 --- a/remotion-composer/src/components/CaptionOverlay.tsx
 +++ b/remotion-composer/src/components/CaptionOverlay.tsx
 @@ -1,3 +1,5 @@
@@ -194,7 +269,102 @@ index 0142d68..399a590 100644
  import {
    AbsoluteFill,
    Sequence,
-@@ -110,23 +112,30 @@ const PageRenderer: React.FC<{
+@@ -29,6 +31,22 @@ type CaptionOverlayProps = {
+   // Separator rendered between words. Space-delimited languages want the
+   // default " "; CJK languages (no inter-word spacing) should pass "".
+   wordSeparator?: string;
++  // Where the caption sits vertically, as a fraction of frame height for the
++  // block's centre (0 = top, 1 = bottom). Omit to keep the bottom-anchored
++  // default. Short-form styles often park captions around 0.6.
++  verticalPosition?: number;
++  // Applied to every word — "uppercase" matches the all-caps look common in
++  // short-form captions.
++  textTransform?: "none" | "uppercase" | "lowercase";
++  // Shadow behind the text. Pass "" to drop it.
++  textShadow?: string;
++  // Words that have not started yet are dimmed by default. One-word-per-page
++  // styles want every word at full strength.
++  dimUpcoming?: boolean;
++  // Skip the spring entrance. A one-word page can be on screen for under ten
++  // frames — shorter than the spring takes to settle — so the word would
++  // never reach full opacity. Short-form captions want it to just appear.
++  instantIn?: boolean;
+ };
+ 
+ interface CaptionPage {
+@@ -65,31 +83,67 @@ const PageRenderer: React.FC<{
+   backgroundColor: string;
+   fontFamily: string;
+   wordSeparator: string;
+-}> = ({ page, fontSize, color, highlightColor, backgroundColor, fontFamily, wordSeparator }) => {
++  verticalPosition?: number;
++  textTransform: "none" | "uppercase" | "lowercase";
++  textShadow: string;
++  dimUpcoming: boolean;
++  instantIn: boolean;
++}> = ({
++  page,
++  fontSize,
++  color,
++  highlightColor,
++  backgroundColor,
++  fontFamily,
++  wordSeparator,
++  verticalPosition,
++  textTransform,
++  textShadow,
++  dimUpcoming,
++  instantIn,
++}) => {
+   const frame = useCurrentFrame();
+   const { fps } = useVideoConfig();
+ 
+   const currentMs = page.startMs + (frame / fps) * 1000;
+ 
+   // Spring entrance
+-  const entrance = spring({
++  const spring_ = spring({
+     frame,
+     fps,
+     config: { damping: 18, stiffness: 120 },
+   });
++  const entrance = instantIn ? 1 : spring_;
+ 
+   return (
+     <AbsoluteFill
+       style={{
+         justifyContent: "flex-end",
+         alignItems: "center",
+-        paddingBottom: 80,
++        paddingBottom: verticalPosition === undefined ? 80 : 0,
+       }}
+     >
+       <div
+         style={{
++          // AbsoluteFill is a full-height box, so offsetting it with `top`
++          // and a percentage translate lands in the wrong place. Position the
++          // caption block itself instead: its own height is what the -50%
++          // translate needs to work against. Both translates live in one
++          // string — a second `transform` key would silently replace the
++          // first and drop the centring.
++          ...(verticalPosition === undefined
++            ? {}
++            : {
++                position: "absolute" as const,
++                top: `${verticalPosition * 100}%`,
++              }),
+           opacity: entrance,
+-          transform: `translateY(${interpolate(entrance, [0, 1], [20, 0])}px)`,
++          transform: [
++            verticalPosition === undefined ? null : "translateY(-50%)",
++            `translateY(${interpolate(entrance, [0, 1], [20, 0])}px)`,
++          ]
++            .filter(Boolean)
++            .join(" "),
+           backgroundColor,
+           borderRadius: 12,
+           padding: "14px 28px",
+@@ -110,23 +164,35 @@ const PageRenderer: React.FC<{
              const isActive = w.startMs <= currentMs && w.endMs > currentMs;
              const isPast = w.endMs <= currentMs;
              return (
@@ -228,11 +398,16 @@ index 0142d68..399a590 100644
 +                    // previous behavior; for CJK it prevents mid-word breaks.
 +                    display: "inline-block",
 +                    whiteSpace: "nowrap",
-+                    color: isActive ? highlightColor : isPast ? color : `${color}99`,
++                    color: isActive
++                      ? highlightColor
++                      : isPast || !dimUpcoming
++                        ? color
++                        : `${color}99`,
 +                    transition: "none", // CSS transitions forbidden in Remotion
++                    textTransform,
 +                    textShadow: isActive
-+                      ? `0 0 20px ${highlightColor}66, 0 2px 4px rgba(0,0,0,0.5)`
-+                      : "0 2px 4px rgba(0,0,0,0.5)",
++                      ? `0 0 20px ${highlightColor}66, ${textShadow}`
++                      : textShadow,
 +                  }}
 +                >
 +                  {w.word}
@@ -242,15 +417,33 @@ index 0142d68..399a590 100644
              );
            })}
          </span>
-@@ -142,7 +151,7 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+@@ -142,8 +208,13 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
    color = "#F8FAFC",
    highlightColor = "#22D3EE",
    backgroundColor = "rgba(15, 23, 42, 0.75)",
 -  fontFamily = "Space Grotesk, Inter, system-ui, sans-serif",
 +  fontFamily = displayFamily,
    wordSeparator = " ",
++  verticalPosition,
++  textTransform = "none",
++  textShadow = "0 2px 4px rgba(0,0,0,0.5)",
++  dimUpcoming = true,
++  instantIn = false,
  }) => {
    const { fps } = useVideoConfig();
+   const pages = buildPages(words, wordsPerPage);
+@@ -168,6 +239,11 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+               backgroundColor={backgroundColor}
+               fontFamily={fontFamily}
+               wordSeparator={wordSeparator}
++              verticalPosition={verticalPosition}
++              textTransform={textTransform}
++              textShadow={textShadow}
++              dimUpcoming={dimUpcoming}
++              instantIn={instantIn}
+             />
+           </Sequence>
+         );
 diff --git a/remotion-composer/src/components/ComparisonCard.tsx b/remotion-composer/src/components/ComparisonCard.tsx
 index 0ec43ef..ee9ffec 100644
 --- a/remotion-composer/src/components/ComparisonCard.tsx
@@ -615,10 +808,38 @@ index f9ed63e..6745a4d 100644
      def _has_opencv(self) -> bool:
          try:
 diff --git a/tools/video/remotion_caption_burn.py b/tools/video/remotion_caption_burn.py
-index 35ff6ba..ae5e79e 100644
+index 35ff6ba..410fae0 100644
 --- a/tools/video/remotion_caption_burn.py
 +++ b/tools/video/remotion_caption_burn.py
-@@ -312,7 +312,9 @@ class RemotionCaptionBurn(BaseTool):
+@@ -112,6 +112,19 @@ class RemotionCaptionBurn(BaseTool):
+                 "default": "#22D3EE",
+                 "description": "Highlight color for the active word (hex).",
+             },
++            "caption_style": {
++                "type": "object",
++                "description": (
++                    "Extra caption styling forwarded to the TalkingHead "
++                    "composition. Recognised keys: captionColor, "
++                    "captionBackgroundColor, captionFontFamily, "
++                    "captionWordSeparator, captionVerticalPosition (0-1 "
++                    "fraction of frame height for the caption's centre), "
++                    "captionTextTransform ('uppercase' | 'lowercase' | "
++                    "'none'), captionTextShadow. Unset keys keep the "
++                    "composition defaults."
++                ),
++            },
+             "corrections": {
+                 "type": "object",
+                 "description": (
+@@ -273,6 +286,7 @@ class RemotionCaptionBurn(BaseTool):
+         font_size: int,
+         highlight_color: str,
+         overlays: list[dict] | None = None,
++        caption_style: dict | None = None,
+     ) -> ToolResult:
+         root = self._find_remotion_root()
+         if root is None:
+@@ -312,13 +326,18 @@ class RemotionCaptionBurn(BaseTool):
  
          # Build props JSON
          props = {
@@ -629,3 +850,29 @@ index 35ff6ba..ae5e79e 100644
              "captions": captions,
              "overlays": overlays or [],
              "wordsPerPage": words_per_page,
+             "fontSize": font_size,
+             "highlightColor": highlight_color,
+         }
++        # Caller-supplied look (position, case, colours) rides alongside the
++        # core props; unknown keys are simply ignored by the composition.
++        props.update(caption_style or {})
+         props_dir = root / "public" / "demo-props"
+         props_dir.mkdir(parents=True, exist_ok=True)
+         props_file = props_dir / f"caption-burn-{Path(input_path).stem}.json"
+@@ -448,6 +467,7 @@ class RemotionCaptionBurn(BaseTool):
+         words_per_page = inputs.get("words_per_page", 4)
+         font_size = inputs.get("font_size", 52)
+         highlight_color = inputs.get("highlight_color", "#22D3EE")
++        caption_style = inputs.get("caption_style") or {}
+ 
+         if not Path(input_path).exists():
+             return ToolResult(success=False, error=f"Input video not found: {input_path}")
+@@ -479,7 +499,7 @@ class RemotionCaptionBurn(BaseTool):
+             result = self._render_remotion(
+                 input_path, output_path, captions,
+                 words_per_page, font_size, highlight_color,
+-                overlays=overlays,
++                overlays=overlays, caption_style=caption_style,
+             )
+         else:
+             result = self._render_ffmpeg(input_path, output_path, captions)
