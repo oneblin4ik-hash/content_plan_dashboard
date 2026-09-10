@@ -25,6 +25,12 @@ export interface HookTitleProps {
   align?: "left" | "center" | "right";
   /** Side inset in px. 6561-style hooks sit ~100px in from the frame edge. */
   inset?: number;
+  /**
+   * Extra blurred shadow layered under the stroke. The stroke alone reads as
+   * a sticker on a busy frame; a soft drop underneath sits the title on the
+   * picture. CSS text-shadow syntax, applied after the stroke ring.
+   */
+  dropShadow?: string;
 }
 
 /**
@@ -45,6 +51,7 @@ export const HookTitle: React.FC<HookTitleProps> = ({
   fontWeight = 700,
   align = "center",
   inset = 48,
+  dropShadow = "0 10px 24px rgba(0,0,0,0.75), 0 4px 10px rgba(0,0,0,0.6)",
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -55,7 +62,7 @@ export const HookTitle: React.FC<HookTitleProps> = ({
       const r = (a * Math.PI) / 180;
       steps.push(`${(Math.cos(r) * w).toFixed(2)}px ${(Math.sin(r) * w).toFixed(2)}px 0 ${strokeColor}`);
     }
-    steps.push(`0 ${(w * 1.4).toFixed(0)}px ${(w * 2).toFixed(0)}px rgba(0,0,0,0.55)`);
+    if (dropShadow) steps.push(dropShadow);
     return steps.join(", ");
   };
 
