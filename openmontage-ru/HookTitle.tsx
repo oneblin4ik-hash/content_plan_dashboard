@@ -9,6 +9,8 @@ export interface HookTitleLine {
   /** When this line lands, in seconds from the title's own start. */
   delay?: number;
   fontSize?: number;
+  /** CSS letter-spacing, e.g. "0.18em". The reference tracks out its second line. */
+  letterSpacing?: string;
 }
 
 export interface HookTitleProps {
@@ -19,7 +21,10 @@ export interface HookTitleProps {
   strokeWidth?: number;
   strokeColor?: string;
   fontFamily?: string;
+  fontWeight?: number;
   align?: "left" | "center" | "right";
+  /** Side inset in px. 6561-style hooks sit ~100px in from the frame edge. */
+  inset?: number;
 }
 
 /**
@@ -37,7 +42,9 @@ export const HookTitle: React.FC<HookTitleProps> = ({
   strokeWidth = 6,
   strokeColor = "#000000",
   fontFamily = titleFamily,
+  fontWeight = 700,
   align = "center",
+  inset = 48,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -58,8 +65,8 @@ export const HookTitle: React.FC<HookTitleProps> = ({
         justifyContent: "flex-start",
         alignItems: align === "center" ? "center" : align === "left" ? "flex-start" : "flex-end",
         paddingTop: `${top * 100}%`,
-        paddingLeft: 48,
-        paddingRight: 48,
+        paddingLeft: inset,
+        paddingRight: inset,
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "inherit" }}>
@@ -76,10 +83,10 @@ export const HookTitle: React.FC<HookTitleProps> = ({
                 opacity: appear,
                 transform: `translateY(${interpolate(appear, [0, 1], [14, 0])}px)`,
                 fontFamily,
-                fontWeight: 800,
+                fontWeight,
                 fontSize: size,
                 lineHeight: 1.12,
-                letterSpacing: "0.01em",
+                letterSpacing: line.letterSpacing ?? "0.01em",
                 color: line.color ?? "#FFFFFF",
                 textTransform: "uppercase",
                 textShadow: ring(strokeWidth),

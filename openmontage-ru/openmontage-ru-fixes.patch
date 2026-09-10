@@ -141,7 +141,7 @@ index d837f14..d614102 100644
      chartColors: ["#E94560", "#1A1A2E", "#0F3460", "#9CA3AF"],
      springConfig: { damping: 25, stiffness: 150, mass: 1 },
 diff --git a/remotion-composer/src/TalkingHead.tsx b/remotion-composer/src/TalkingHead.tsx
-index 6f3b63c..f5ad0fd 100644
+index 6f3b63c..6f83490 100644
 --- a/remotion-composer/src/TalkingHead.tsx
 +++ b/remotion-composer/src/TalkingHead.tsx
 @@ -17,6 +17,7 @@ import { LineChart } from "./components/charts/LineChart";
@@ -152,7 +152,7 @@ index 6f3b63c..f5ad0fd 100644
  import { SectionTitle } from "./components/SectionTitle";
  import { StatReveal } from "./components/StatReveal";
  
-@@ -308,6 +309,13 @@ export interface TalkingHeadProps {
+@@ -308,6 +309,15 @@ export interface TalkingHeadProps {
    captionFontFamily?: string;
    // Pass "" for CJK captions (no inter-word spacing); defaults to " ".
    captionWordSeparator?: string;
@@ -161,12 +161,14 @@ index 6f3b63c..f5ad0fd 100644
 +  captionTextShadow?: string;
 +  captionDimUpcoming?: boolean;
 +  captionInstantIn?: boolean;
++  captionScaleX?: number;
++  captionMaxHoldMs?: number;
 +  /** Opening hook card that builds line by line, with its own timing. */
 +  hookTitle?: HookTitleProps & { in_seconds?: number; out_seconds?: number };
  }
  
  export const TalkingHead: React.FC<TalkingHeadProps> = ({
-@@ -321,6 +329,12 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+@@ -321,6 +331,14 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
    captionBackgroundColor = "rgba(0, 0, 0, 0.65)",
    captionFontFamily,
    captionWordSeparator,
@@ -175,11 +177,13 @@ index 6f3b63c..f5ad0fd 100644
 +  captionTextShadow,
 +  captionDimUpcoming,
 +  captionInstantIn,
++  captionScaleX,
++  captionMaxHoldMs,
 +  hookTitle,
  }) => {
    const { fps } = useVideoConfig();
  
-@@ -349,6 +363,21 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+@@ -349,6 +367,21 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
          );
        })}
  
@@ -201,7 +205,7 @@ index 6f3b63c..f5ad0fd 100644
        {/* Layer 3: Captions (topmost — always visible above overlays) */}
        <CaptionOverlay
          words={captions}
-@@ -359,6 +388,13 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
+@@ -359,6 +392,15 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
          color={captionColor}
          {...(captionFontFamily ? { fontFamily: captionFontFamily } : {})}
          {...(captionWordSeparator !== undefined ? { wordSeparator: captionWordSeparator } : {})}
@@ -212,6 +216,8 @@ index 6f3b63c..f5ad0fd 100644
 +        {...(captionTextShadow !== undefined ? { textShadow: captionTextShadow } : {})}
 +        {...(captionDimUpcoming !== undefined ? { dimUpcoming: captionDimUpcoming } : {})}
 +        {...(captionInstantIn !== undefined ? { instantIn: captionInstantIn } : {})}
++        {...(captionScaleX !== undefined ? { scaleX: captionScaleX } : {})}
++        {...(captionMaxHoldMs !== undefined ? { maxHoldMs: captionMaxHoldMs } : {})}
        />
      </AbsoluteFill>
    );
@@ -260,7 +266,7 @@ index 1609739..12503d6 100644
    titleFontSize = 38,
    containerBackgroundColor = "#FFFFFF",
 diff --git a/remotion-composer/src/components/CaptionOverlay.tsx b/remotion-composer/src/components/CaptionOverlay.tsx
-index 0142d68..73d260e 100644
+index 0142d68..802b6ab 100644
 --- a/remotion-composer/src/components/CaptionOverlay.tsx
 +++ b/remotion-composer/src/components/CaptionOverlay.tsx
 @@ -1,3 +1,5 @@
@@ -269,7 +275,7 @@ index 0142d68..73d260e 100644
  import {
    AbsoluteFill,
    Sequence,
-@@ -29,6 +31,22 @@ type CaptionOverlayProps = {
+@@ -29,6 +31,33 @@ type CaptionOverlayProps = {
    // Separator rendered between words. Space-delimited languages want the
    // default " "; CJK languages (no inter-word spacing) should pass "".
    wordSeparator?: string;
@@ -289,10 +295,21 @@ index 0142d68..73d260e 100644
 +  // frames — shorter than the spring takes to settle — so the word would
 +  // never reach full opacity. Short-form captions want it to just appear.
 +  instantIn?: boolean;
++  /**
++   * Longest a page may stay up past its own last word, in ms. Without it a
++   * page holds until the next one starts, so the final word of a sentence
++   * sits on screen through the pause that follows — and across any cut in
++   * that pause. Omit to keep holding until the next page.
++   */
++  maxHoldMs?: number;
++  // Horizontal squeeze applied to each word. Lets a available face hit the
++  // width of a narrower one it is standing in for; below about 0.8 the
++  // verticals thin out visibly, so treat it as a nudge, not a substitute.
++  scaleX?: number;
  };
  
  interface CaptionPage {
-@@ -65,31 +83,67 @@ const PageRenderer: React.FC<{
+@@ -65,31 +94,69 @@ const PageRenderer: React.FC<{
    backgroundColor: string;
    fontFamily: string;
    wordSeparator: string;
@@ -302,6 +319,7 @@ index 0142d68..73d260e 100644
 +  textShadow: string;
 +  dimUpcoming: boolean;
 +  instantIn: boolean;
++  scaleX: number;
 +}> = ({
 +  page,
 +  fontSize,
@@ -315,6 +333,7 @@ index 0142d68..73d260e 100644
 +  textShadow,
 +  dimUpcoming,
 +  instantIn,
++  scaleX,
 +}) => {
    const frame = useCurrentFrame();
    const { fps } = useVideoConfig();
@@ -364,7 +383,7 @@ index 0142d68..73d260e 100644
            backgroundColor,
            borderRadius: 12,
            padding: "14px 28px",
-@@ -110,23 +164,40 @@ const PageRenderer: React.FC<{
+@@ -110,23 +177,43 @@ const PageRenderer: React.FC<{
              const isActive = w.startMs <= currentMs && w.endMs > currentMs;
              const isPast = w.endMs <= currentMs;
              return (
@@ -398,6 +417,9 @@ index 0142d68..73d260e 100644
 +                    // previous behavior; for CJK it prevents mid-word breaks.
 +                    display: "inline-block",
 +                    whiteSpace: "nowrap",
++                    ...(scaleX === 1
++                      ? {}
++                      : { transform: `scaleX(${scaleX})`, transformOrigin: "center" }),
 +                    color: isActive
 +                      ? highlightColor
 +                      : isPast || !dimUpcoming
@@ -422,7 +444,7 @@ index 0142d68..73d260e 100644
              );
            })}
          </span>
-@@ -142,8 +213,13 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+@@ -142,8 +229,15 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
    color = "#F8FAFC",
    highlightColor = "#22D3EE",
    backgroundColor = "rgba(15, 23, 42, 0.75)",
@@ -434,10 +456,27 @@ index 0142d68..73d260e 100644
 +  textShadow = "0 2px 4px rgba(0,0,0,0.5)",
 +  dimUpcoming = true,
 +  instantIn = false,
++  scaleX = 1,
++  maxHoldMs,
  }) => {
    const { fps } = useVideoConfig();
    const pages = buildPages(words, wordsPerPage);
-@@ -168,6 +244,11 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+@@ -153,9 +247,13 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
+       {pages.map((page, i) => {
+         const fromFrame = Math.round((page.startMs / 1000) * fps);
+         const nextStart = pages[i + 1]?.startMs ?? page.endMs + 500;
++        const until =
++          maxHoldMs === undefined
++            ? nextStart
++            : Math.min(nextStart, page.endMs + maxHoldMs);
+         const duration = Math.max(
+           1,
+-          Math.round(((nextStart - page.startMs) / 1000) * fps)
++          Math.round(((until - page.startMs) / 1000) * fps)
+         );
+ 
+         return (
+@@ -168,6 +266,12 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
                backgroundColor={backgroundColor}
                fontFamily={fontFamily}
                wordSeparator={wordSeparator}
@@ -446,6 +485,7 @@ index 0142d68..73d260e 100644
 +              textShadow={textShadow}
 +              dimUpcoming={dimUpcoming}
 +              instantIn={instantIn}
++              scaleX={scaleX}
              />
            </Sequence>
          );
