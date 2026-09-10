@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
-import { displayFamily } from "../lib/cyrillicFonts";
+import { titleFamily } from "../lib/cyrillicFonts";
 
 export interface HookTitleLine {
   text: string;
@@ -36,7 +36,7 @@ export const HookTitle: React.FC<HookTitleProps> = ({
   fontSize = 96,
   strokeWidth = 6,
   strokeColor = "#000000",
-  fontFamily = displayFamily,
+  fontFamily = titleFamily,
   align = "center",
 }) => {
   const frame = useCurrentFrame();

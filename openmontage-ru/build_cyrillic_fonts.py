@@ -38,6 +38,8 @@ FACES: list[tuple[str, str, str, str]] = [
     ("OM Condensed", "Oswald-500.woff2", "500", "normal"),
     ("OM Condensed", "Oswald-600.woff2", "600", "normal"),
     ("OM Condensed", "Oswald-700.woff2", "700", "normal"),
+    # Авторский шрифт заголовков (Rimma Sans Bold), присланный владельцем канала.
+    ("OM Title", "RimmaSans-Bold.woff2", "700", "normal"),
 ]
 
 HEADER = """/**

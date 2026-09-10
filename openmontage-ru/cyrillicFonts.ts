@@ -59,5 +59,7 @@ export const displayFamily = '"OM Display", Montserrat, "Noto Sans", system-ui, 
 export const textFamily = '"OM Text", Inter, "Noto Sans", system-ui, sans-serif';
 /** Condensed sans with Cyrillic — word-by-word captions in short-form video. */
 export const condensedFamily = '"OM Condensed", Oswald, "Roboto Condensed", sans-serif';
+/** The channel's own display face for hook titles. */
+export const titleFamily = '"OM Title", "OM Display", Montserrat, sans-serif';
 /** Serif with Cyrillic. Stands in for Playfair Display. */
 export const serifFamily = '"OM Serif", "Playfair Display", "Noto Serif", Georgia, serif';
