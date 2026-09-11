@@ -18,6 +18,15 @@ import sys
 
 import numpy as np
 
+# Доля от пикового числа пикселей в ряду, ниже которой ряд не считается
+# частью капители. См. пояснение в line_metrics.
+CORE_ROW_FRACTION = 0.12
+
+# Ниже этой капители (в долях высоты кадра) находка — не строка субтитра,
+# а блик или деталь одежды. 0.02 от 1920 — это 38px, вдвое меньше самого
+# мелкого субтитра в образцах.
+MIN_CAP_FRACTION = 0.02
+
 
 def read_frame(path: str, t: float, w: int, h: int) -> np.ndarray:
     raw = subprocess.run(
@@ -37,27 +46,63 @@ def dimensions(path: str) -> tuple[int, int]:
 
 
 def line_metrics(im: np.ndarray, offset: int, band: tuple[float, float]):
-    """Вернуть (капитель, ширина, центр по высоте) строки субтитра."""
+    """Вернуть (капитель, ширина, центр по высоте) строки субтитра.
+
+    Наивный поиск «яркий пиксель со смещённой тенью» ловит не только текст:
+    белая футболка с тёмным краем, светлая полоска на рукаве, блик на столе
+    отзываются так же. Поэтому найденное проверяется дважды.
+
+    Во-первых, строка берётся не по всем откликнувшимся рядам, а по тем, где
+    пикселей много. Выносные элементы (Д, Ц, Щ опускаются ниже базовой линии)
+    дают считанные пиксели на ряд и завышают капитель на 15-20%, если их
+    не отсечь.
+
+    Во-вторых, у текста поперёк строки много переходов «есть-нет»: буквы
+    чередуются с просветами. У куска одежды переходов единицы. Это и
+    отличает одно от другого.
+    """
     h, w, _ = im.shape
     lum = 0.2126 * im[..., 0] + 0.7152 * im[..., 1] + 0.0722 * im[..., 2]
     bright, shadow = lum[:-offset, :-offset], lum[offset:, offset:]
     text = (bright > 235) & (shadow < bright - 95)
     lo, hi = int(h * band[0]), int(h * band[1])
     strip = text[lo:hi]
-    rows = np.where(strip.sum(1) > 4)[0]
-    if len(rows) == 0:
+
+    counts = strip.sum(1)
+    if counts.max() < 12:
         return None
-    runs, s = [], rows[0]
-    for a, b in zip(rows, rows[1:]):
+    # Ряды, где пикселей заметно меньше пика, — это выносные элементы и мусор.
+    # Порог подобран по кадрам, а не на глаз: на пяти словах с выносными
+    # элементами и светлой одеждой в кадре 0.12 даёт 94-95px там, где
+    # ожидается 95. Ниже 0.12 в замер лезут ножки Д и полоска на рукаве
+    # (до 265px), выше — срезаются настоящие ряды капители.
+    core = np.where(counts >= counts.max() * CORE_ROW_FRACTION)[0]
+    if len(core) == 0:
+        return None
+    runs, s0 = [], core[0]
+    for a, b in zip(core, core[1:]):
         if b - a > 8:
-            runs.append((s, a))
-            s = b
-    runs.append((s, rows[-1]))
+            runs.append((s0, a))
+            s0 = b
+    runs.append((s0, core[-1]))
     r0, r1 = max(runs, key=lambda r: r[1] - r[0])
-    cols = np.where(strip[r0:r1 + 1].sum(0) > 0)[0]
+
+    rows = strip[r0:r1 + 1]
+    cols = np.where(rows.sum(0) > 0)[0]
     if len(cols) == 0:
         return None
-    return r1 - r0 + 1, cols[-1] - cols[0] + 1, (lo + (r0 + r1) / 2) / h
+
+    # Плотность штрихов: сколько раз по горизонтали текст начинается заново.
+    occupied = rows.sum(0) > 0
+    transitions = int(np.count_nonzero(occupied[1:] & ~occupied[:-1])) + int(occupied[0])
+    width = cols[-1] - cols[0] + 1
+    if transitions < 2 and width > (r1 - r0 + 1) * 2.5:
+        return None  # широкое и сплошное — это одежда, а не слово
+
+    cap = r1 - r0 + 1
+    if cap < h * MIN_CAP_FRACTION:
+        return None  # слишком мелко для субтитра — блик или деталь одежды
+    return cap, width, (lo + (r0 + r1) / 2) / h
 
 
 def sample_times(path: str, count: int) -> list[float]:
