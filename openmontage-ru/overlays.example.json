@@ -1,0 +1,5 @@
+[
+  {"type":"hero_title","in_seconds":0.3,"out_seconds":3.2,"position":"full_overlay","text":"МОНТАЖ БЕСПЛАТНО"},
+  {"type":"callout","in_seconds":6.7,"out_seconds":9.2,"position":"upper_third","text":"0 рублей за подписки","callout_type":"tip"},
+  {"type":"stat_card","in_seconds":9.4,"out_seconds":11.3,"position":"lower_third","stat":"100%","text":"локально на ПК"}
+]
