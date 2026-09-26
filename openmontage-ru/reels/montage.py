@@ -359,11 +359,26 @@ def stage_finish(spec, out: Path):
               f"loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_at:.2f}:d=0.16[aout]")
 
     final = out / "final.mp4"
-    run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(fc),
-         "-map", "[vout]", "-map", "[aout]", *FINAL, "-c:a", "aac", "-b:a", "256k",
-         "-ar", "48000", "-shortest", str(final)])
+    # Готовый файл уходит в чат, а там лимит 30 МиБ. Начинаем с crf 16 и
+    # поднимаем по единице, пока не влезет: для Reels это без видимых потерь,
+    # Instagram всё равно пережимает до 3-5 Мбит/с.
+    max_bytes = float(spec.get("max_mb", 29)) * 1024 * 1024
+    crf = int(spec.get("final_crf", 16))
+    while True:
+        enc = list(FINAL)
+        enc[enc.index("-crf") + 1] = str(crf)
+        run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(fc),
+             "-map", "[vout]", "-map", "[aout]", *enc, "-c:a", "aac", "-b:a", "256k",
+             "-ar", "48000", "-shortest", str(final)])
+        size = final.stat().st_size
+        if size <= max_bytes or crf >= 24:
+            break
+        print(f"  crf {crf}: {size / 1048576:.1f} МиБ — больше лимита, пробую crf {crf + 1}")
+        crf += 1
     info = probe(final)
-    print(f"  {final}: {info['w']}x{info['h']}, {info['dur']:.2f}с")
+    rate = size * 8 / info["dur"] / 1e6
+    print(f"  {final}: {info['w']}x{info['h']}, {info['dur']:.2f}с, crf {crf}, "
+          f"{size / 1048576:.1f} МиБ ({rate:.1f} Мбит/с)")
 
 
 def stage_check(spec, out: Path):
