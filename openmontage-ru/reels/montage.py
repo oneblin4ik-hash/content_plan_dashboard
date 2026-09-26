@@ -345,10 +345,37 @@ def stage_finish(spec, out: Path):
                   f"fade=out:st={at + cd - 0.30:.2f}:d=0.30:alpha=1[chip]")
         fc.append(f"[0:v][chip]overlay=x=260:y=300:enable='between(t,{at:.2f},{at + cd:.2f})'[vc]")
         vlabel = "vc"
+    # Анимированные вставки (inserts.py): каждая рисуется в прозрачный ролик,
+    # сдвигается во времени и кладётся поверх; звук к ней добавляется сам.
+    sys.path.insert(0, str(HERE))
+    import inserts as ins
+    auto_sfx = []
+    for k, item in enumerate(spec.get("inserts", [])):
+        at, dur = float(item["at"]), float(item["dur"])
+        mov = ins.render(item, out / f"ins_{k:02d}.mov")
+        idx = inputs.count("-i")
+        inputs += ["-i", str(mov)]
+        y = int(item.get("y", 230))
+        fc.append(f"[{idx}:v]format=rgba,setpts=PTS+{at:.3f}/TB[ins{k}]")
+        fc.append(f"[{vlabel}][ins{k}]overlay=x=(W-w)/2:y={y}:eof_action=pass:"
+                  f"enable='between(t,{at:.3f},{at + dur:.3f})'[vi{k}]")
+        vlabel = f"vi{k}"
+        kind = item["type"]
+        if kind == "list":
+            auto_sfx += [["pop.mp3", at + o, 0.40] for o in item["offsets"]]
+        else:
+            auto_sfx.append(["pop.mp3", at, 0.42])
+        if kind == "strike":
+            auto_sfx.append(["error.mp3", at + 0.35, 0.26])
+        elif kind == "check":
+            auto_sfx.append(["ping.mp3", at + 0.20, 0.28])
+        elif kind == "counter":
+            auto_sfx.append(["ping.mp3", at + float(item.get("run", 0.7)), 0.28])
+        print(f"  вставка {kind:8s} {at:6.2f}с  {item.get('text') or item.get('items') or item.get('to')}")
     fc.append(f"[{vlabel}]fade=t=out:st={fade_at:.2f}:d=0.16[vout]")
 
     sfx = [["whoosh-short.mp3", 0.10, 0.40], ["impact-bass-1.mp3", 0.26, 0.34]]
-    sfx += spec.get("sfx", [])
+    sfx += spec.get("sfx", []) + auto_sfx
     # Номер следующего входа — по числу "-i", а не по длине списка: у плашки
     # перед "-i" стоят ещё "-loop 1 -t ...".
     base = inputs.count("-i")
