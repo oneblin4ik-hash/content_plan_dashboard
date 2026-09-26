@@ -118,6 +118,23 @@ def hdr_prefix(src: dict) -> str:
             "tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,")
 
 
+def _moving_zoom(src, base_w, base_h, crop_y, z0, z1, dur):
+    """Плавный наезд (z1 > z0) или отъезд (z1 < z0) на протяжении куска.
+
+    У crop размеры окна вычисляются один раз, поэтому зум делается иначе:
+    каждый кадр масштабируется целиком до нужного размера, а потом из
+    середины вырезается кадр 1080x1920. Кривая — косинусная: движение
+    мягко разгоняется и мягко останавливается, без рывка на склейке.
+    """
+    x0 = (src["w"] - base_w) // 2
+    y0 = (src["h"] - base_h) // 2
+    k = f"(1-cos(PI*min(t/{dur:.3f},1)))/2"
+    zf = f"({z0:.4f}+({z1 - z0:.4f})*{k})"
+    return (f"crop={base_w}:{base_h}:{x0}:{y0},fps=30,"
+            f"scale=w='trunc({OW}*{zf}/2)*2':h='trunc({OH}*{zf}/2)*2':eval=frame:flags=lanczos,"
+            f"crop={OW}:{OH}:(iw-{OW})/2:(ih-{OH})*{crop_y}")
+
+
 # ─────────────────────────────── этапы ────────────────────────────────
 
 def stage_assemble(spec, out: Path):
@@ -130,20 +147,26 @@ def stage_assemble(spec, out: Path):
     parts, total = [], 0.0
     for i, cut in enumerate(spec["cuts"]):
         a, b, z = float(cut["a"]), float(cut["b"]), float(cut.get("zoom", 1.0))
-        # Кроп под 9:16 по центру; при зуме окно уменьшается и чуть поднято.
         base_w = min(src["w"], int(src["h"] * 9 / 16))
         base_h = int(base_w * 16 / 9)
-        cw, ch = int(base_w / z) // 2 * 2, int(base_h / z) // 2 * 2
-        x = (src["w"] - cw) // 2
-        y = int((src["h"] - ch) * crop_y)
-        vf = f"{tone}crop={cw}:{ch}:{x}:{y},scale={OW}:{OH}:flags=lanczos,fps=30"
+        if "zoom_to" in cut:
+            vf = tone + _moving_zoom(src, base_w, base_h, crop_y,
+                                     float(cut.get("zoom_from", z)), float(cut["zoom_to"]), b - a)
+        else:
+            # Кроп под 9:16 по центру; при зуме окно уменьшается и чуть поднято.
+            cw, ch = int(base_w / z) // 2 * 2, int(base_h / z) // 2 * 2
+            x = (src["w"] - cw) // 2
+            y = int((src["h"] - ch) * crop_y)
+            vf = f"{tone}crop={cw}:{ch}:{x}:{y},scale={OW}:{OH}:flags=lanczos,fps=30"
         p = out / f"cut_{i:02d}.mp4"
         run(["ffmpeg", "-y", "-v", "error", "-ss", str(a), "-to", str(b), "-i", str(src_path),
              "-vf", vf, *MEZZ, "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2",
              str(p.with_suffix(".mov"))])
         parts.append(p.with_suffix(".mov"))
         total += b - a
-        print(f"  [{i}] {a:7.2f}–{b:7.2f}  зум {z:.2f}  {cut.get('label', '')}")
+        zoom_txt = (f"{float(cut.get('zoom_from', z)):.2f}→{float(cut['zoom_to']):.2f}"
+                    if "zoom_to" in cut else f"{z:.2f}")
+        print(f"  [{i}] {a:7.2f}–{b:7.2f}  зум {zoom_txt:9s} {cut.get('label', '')}")
     (out / "concat.txt").write_text("".join(f"file '{p.name}'\n" for p in parts))
     run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
          "-i", str(out / "concat.txt"), "-c", "copy", str(out / "rough.mov")])
