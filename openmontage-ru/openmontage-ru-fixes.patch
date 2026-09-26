@@ -853,13 +853,26 @@ index f9ed63e..6745a4d 100644
      def _has_opencv(self) -> bool:
          try:
 diff --git a/tools/video/remotion_caption_burn.py b/tools/video/remotion_caption_burn.py
-index 35ff6ba..410fae0 100644
+index 35ff6ba..d9aa4df 100644
 --- a/tools/video/remotion_caption_burn.py
 +++ b/tools/video/remotion_caption_burn.py
-@@ -112,6 +112,19 @@ class RemotionCaptionBurn(BaseTool):
+@@ -112,6 +112,32 @@ class RemotionCaptionBurn(BaseTool):
                  "default": "#22D3EE",
                  "description": "Highlight color for the active word (hex).",
              },
++            "render_quality": {
++                "type": "object",
++                "description": (
++                    "Encoder settings for the Remotion render. Keys: crf "
++                    "(default 18), image_format ('jpeg' | 'png', default "
++                    "'jpeg'). Remotion renders every frame to an image "
++                    "before encoding; with the default JPEG at quality 80 "
++                    "that is a lossy generation on top of the h264 one, "
++                    "which shows as mush on skin and hair. Pass "
++                    "{'image_format': 'png', 'crf': 10} when the render is "
++                    "an intermediate that will be encoded again."
++                ),
++            },
 +            "caption_style": {
 +                "type": "object",
 +                "description": (
@@ -876,15 +889,16 @@ index 35ff6ba..410fae0 100644
              "corrections": {
                  "type": "object",
                  "description": (
-@@ -273,6 +286,7 @@ class RemotionCaptionBurn(BaseTool):
+@@ -273,6 +299,8 @@ class RemotionCaptionBurn(BaseTool):
          font_size: int,
          highlight_color: str,
          overlays: list[dict] | None = None,
 +        caption_style: dict | None = None,
++        render_quality: dict | None = None,
      ) -> ToolResult:
          root = self._find_remotion_root()
          if root is None:
-@@ -312,13 +326,18 @@ class RemotionCaptionBurn(BaseTool):
+@@ -312,18 +340,28 @@ class RemotionCaptionBurn(BaseTool):
  
          # Build props JSON
          props = {
@@ -904,20 +918,42 @@ index 35ff6ba..410fae0 100644
          props_dir = root / "public" / "demo-props"
          props_dir.mkdir(parents=True, exist_ok=True)
          props_file = props_dir / f"caption-burn-{Path(input_path).stem}.json"
-@@ -448,6 +467,7 @@ class RemotionCaptionBurn(BaseTool):
+         props_file.write_text(json.dumps(props, indent=2), encoding="utf-8")
+ 
++        quality = render_quality or {}
++        if quality.get("image_format", "jpeg") not in ("jpeg", "png"):
++            return ToolResult(success=False,
++                              error="render_quality.image_format must be 'jpeg' or 'png'")
++
+         # Render (use npx.cmd on Windows for subprocess compatibility)
+         import sys
+         npx_bin = "npx.cmd" if sys.platform == "win32" else "npx"
+@@ -333,7 +371,8 @@ class RemotionCaptionBurn(BaseTool):
+             f"--props={props_file.relative_to(root)}",
+             f"--width={width}", f"--height={height}", "--fps=30",
+             f"--frames=0-{total_frames - 1}",
+-            "--codec=h264", "--crf=18",
++            "--codec=h264", f"--crf={int(quality.get('crf', 18))}",
++            f"--image-format={quality.get('image_format', 'jpeg')}",
+             f"--output={str(Path(output_path).resolve())}",
+         ]
+         self.run_command(render_cmd, cwd=str(root))
+@@ -448,6 +487,8 @@ class RemotionCaptionBurn(BaseTool):
          words_per_page = inputs.get("words_per_page", 4)
          font_size = inputs.get("font_size", 52)
          highlight_color = inputs.get("highlight_color", "#22D3EE")
 +        caption_style = inputs.get("caption_style") or {}
++        render_quality = inputs.get("render_quality") or {}
  
          if not Path(input_path).exists():
              return ToolResult(success=False, error=f"Input video not found: {input_path}")
-@@ -479,7 +499,7 @@ class RemotionCaptionBurn(BaseTool):
+@@ -479,7 +520,8 @@ class RemotionCaptionBurn(BaseTool):
              result = self._render_remotion(
                  input_path, output_path, captions,
                  words_per_page, font_size, highlight_color,
 -                overlays=overlays,
 +                overlays=overlays, caption_style=caption_style,
++                render_quality=render_quality,
              )
          else:
              result = self._render_ffmpeg(input_path, output_path, captions)
