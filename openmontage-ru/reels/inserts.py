@@ -259,8 +259,17 @@ def _covered(font) -> set:
 
 
 def _glyph_font(font, ch):
-    """Урезанные woff2 из набора без знаков препинания — берём их из запасного шрифта."""
-    if ord(ch) in _covered(font) or not Path(FALLBACK).exists():
+    """В наборе кириллические woff2 без цифр и знаков: сначала берём латинский
+    файл того же шрифта (fonts/<Имя>-latin.woff2), и только потом запасной."""
+    if ord(ch) in _covered(font):
+        return font
+    name = Path(font.path).stem.replace("ins_", "")
+    latin = FONTS / f"{name}-latin.woff2"
+    if latin.exists():
+        lf = _ttf(f"{name}-latin", font.size)
+        if ord(ch) in _covered(lf):
+            return lf
+    if not Path(FALLBACK).exists():
         return font
     return ImageFont.truetype(FALLBACK, int(font.size * 0.92))
 
@@ -272,7 +281,7 @@ def _text(d, xy, text, font, fill, track=0.0):
         x0 = x
         for ch in text:
             f = _glyph_font(font, ch)
-            d.text((x, y + (font.size - f.size) * 0.6), ch, font=f, fill=fill)
+            d.text((x, y + (font.size - f.size) * 0.6), ch, font=f, fill=fill)   # у своего латинского файла сдвиг 0
             x += d.textlength(ch, font=f) + track * font.size
         return x - x0
     if not track:
