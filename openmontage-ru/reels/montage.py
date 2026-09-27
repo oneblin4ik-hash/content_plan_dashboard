@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -92,6 +93,47 @@ TITLE_MAX_W = OW - 2 * TITLE_INSET - 12
 TITLE_RED = "#FD3233"
 
 VOICE = "highpass=f=80,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=150:makeup=1.5"
+
+
+# Глитчи — шум на всю полосу частот, перекрывают голос при любой громкости.
+SFX_BANNED = ("glitch",)
+SFX_REF_DB = -26.0      # средняя громкость pop.mp3 — опорный уровень эффектов
+SFX_MAX_LEN = 1.2       # длиннее эффект не звучит: хвост ударов тянется по 2.5 с
+MIN_VOICE_MARGIN = 12   # на речи эффекты должны быть тише голоса минимум на столько дБ
+
+
+def _sfx_level(name: str) -> tuple[float, float]:
+    f = SFX_DIR / name
+    r = subprocess.run(["ffmpeg", "-v", "info", "-nostats", "-i", str(f), "-af", "volumedetect",
+                        "-f", "null", "-"], capture_output=True, text=True).stderr
+    mean = float(re.search(r"mean_volume: (-?[\d.]+) dB", r).group(1))
+    length = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                   "-of", "csv=p=0", str(f)], capture_output=True, text=True).stdout)
+    return mean, length
+
+
+def _voice_margin(voice_wav: Path, sfx_wav: Path, win: float = 0.1):
+    import numpy as np
+
+    def rms_db(path):
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le", "-"],
+                             capture_output=True).stdout
+        x = np.frombuffer(raw, np.int16).astype(float) / 32768
+        n = int(16000 * win)
+        k = len(x) // n
+        return 20 * np.log10(np.sqrt((x[:k * n].reshape(k, n) ** 2).mean(1)) + 1e-9)
+
+    v, e = rms_db(voice_wav), rms_db(sfx_wav)
+    k = min(len(v), len(e))
+    v, e = v[:k], e[:k]
+    speech = v > -35
+    margin = v[speech] - e[speech]
+    bad = [i * win for i in np.where(speech)[0] if v[i] - e[i] < MIN_VOICE_MARGIN]
+    worst = margin.min() if len(margin) else 99
+    print(f"  голос над эффектами: худшее {worst:.1f} дБ (нужно ≥{MIN_VOICE_MARGIN}), "
+          f"медиана {np.median(margin):.1f} дБ")
+    if bad:
+        print("  ! эффекты громче допустимого на: " + ", ".join(f"{t:.1f}с" for t in bad[:12]))
 
 
 def run(cmd, **kw):
@@ -413,25 +455,55 @@ def stage_finish(spec, out: Path):
         print(f"  вставка {kind:8s} {at:6.2f}с  {item.get('text') or item.get('items') or item.get('to')}")
     fc.append(f"[{vlabel}]fade=t=out:st={fade_at:.2f}:d=0.16[vout]")
 
-    sfx = [["whoosh-short.mp3", 0.10, 0.40], ["impact-bass-1.mp3", 0.26, 0.34]]
+    sfx = [["whoosh-short.mp3", 0.10, 0.70], ["impact-bass-1.mp3", 0.26, 0.70]]
     sfx += spec.get("sfx", []) + auto_sfx
+    kept = []
+    for name, at, vol in sfx:
+        if name.startswith(SFX_BANNED):
+            print(f"  ! {name} запрещён (глушит голос) — пропускаю")
+            continue
+        kept.append((name, float(at), float(vol)))
     # Номер следующего входа — по числу "-i", а не по длине списка: у плашки
     # перед "-i" стоят ещё "-loop 1 -t ...".
     base = inputs.count("-i")
-    labels = []
-    for n, (name, at, vol) in enumerate(sfx):
-        idx = base + n
+    for name, _, _ in kept:
         inputs += ["-i", str(SFX_DIR / name)]
-        ms = int(float(at) * 1000)
-        fc.append(f"[{idx}:a]volume={vol},adelay={ms}|{ms}[s{n}]")
-        labels.append(f"[s{n}]")
-    # Эффекты сводятся в одну шину и приглушаются голосом (sidechain): пока
-    # человек говорит, звук не перекрывает слова, в паузах звучит в полную силу.
-    fc.append(f"[0:a]{VOICE},asplit=2[voice][vkey]")
-    fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[sfxbus]")
-    fc.append("[sfxbus][vkey]sidechaincompress=threshold=0.02:ratio=6:attack=8:release=250[sfxd]")
-    fc.append(f"[voice][sfxd]amix=inputs=2:normalize=0:duration=first,"
-              f"loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_at:.2f}:d=0.16[aout]")
+
+    def audio_graph(stems: bool) -> list[str]:
+        g = []
+        labels = []
+        for n, (name, at, vol) in enumerate(kept):
+            # Файлы библиотеки разной громкости (удар баса в 20 дБ громче
+            # щелчка), поэтому каждый приводится к средней громкости щелчка,
+            # а vol — множитель поверх. Длинные хвосты обрезаются.
+            mean_db, length = _sfx_level(name)
+            gain = min(0.0, SFX_REF_DB - mean_db) + 20 * math.log10(max(vol, 1e-4))
+            cap = min(SFX_MAX_LEN, length)
+            ms = int(at * 1000)
+            g.append(f"[{base + n}:a]atrim=0:{cap:.2f},afade=t=out:st={max(cap - 0.3, 0):.2f}:d=0.3,"
+                     f"volume={gain:.1f}dB,adelay={ms}|{ms}[s{n}]")
+            labels.append(f"[s{n}]")
+        # Голос нормализуется отдельно, до смешивания, поэтому эффекты не
+        # влияют на его громкость. Эффекты сводятся в шину и сильно
+        # прижимаются голосом (sidechain): пока человек говорит, их почти нет.
+        split = 3 if stems else 2
+        outs = "[voice][vkey][vstem]" if stems else "[voice][vkey]"
+        g.append(f"[0:a]{VOICE},loudnorm=I=-14:TP=-2:LRA=11,asplit={split}{outs}")
+        g.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[sfxbus]")
+        g.append("[sfxbus][vkey]sidechaincompress=threshold=0.01:ratio=12:attack=4:release=220"
+                 + (",asplit=2[sfxd][sstem]" if stems else "[sfxd]"))
+        g.append(f"[voice][sfxd]amix=inputs=2:normalize=0:duration=first,"
+                 f"alimiter=limit=0.85:level=false,afade=t=out:st={fade_at:.2f}:d=0.16[aout]")
+        return g
+
+    # Проверка «голос в приоритете»: отдельно пишем голос и эффекты и
+    # смотрим, насколько эффекты тише голоса там, где идёт речь.
+    run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(audio_graph(True)),
+         "-map", "[vstem]", "-ac", "1", "-ar", "16000", str(out / "stem_voice.wav"),
+         "-map", "[sstem]", "-ac", "1", "-ar", "16000", str(out / "stem_sfx.wav"),
+         "-map", "[aout]", "-f", "null", "-"])
+    _voice_margin(out / "stem_voice.wav", out / "stem_sfx.wav")
+    fc += audio_graph(False)
 
     final = out / "final.mp4"
     # Готовый файл уходит в чат, а там лимит 30 МиБ. Берём лучшее качество,
