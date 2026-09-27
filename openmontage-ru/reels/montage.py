@@ -397,16 +397,19 @@ def stage_finish(spec, out: Path):
                   f"enable='between(t,{at:.3f},{at + dur:.3f})'[vi{k}]")
         vlabel = f"vi{k}"
         kind = item["type"]
+        # sfx_gain — множитель громкости звуков этой вставки (0 — без звука).
+        g = float(item.get("sfx_gain", 1.0))
         if kind == "list":
-            auto_sfx += [["pop.mp3", at + o, 0.40] for o in item["offsets"]]
+            auto_sfx += [["pop.mp3", at + o, 0.40 * g] for o in item["offsets"]]
         else:
-            auto_sfx.append(["pop.mp3", at, 0.42])
+            auto_sfx.append(["pop.mp3", at, 0.42 * g])
         if kind == "strike":
-            auto_sfx.append(["error.mp3", at + 0.35, 0.26])
+            auto_sfx.append(["error.mp3", at + 0.35, 0.26 * g])
         elif kind == "check":
-            auto_sfx.append(["ping.mp3", at + 0.20, 0.28])
+            auto_sfx.append(["ping.mp3", at + 0.20, 0.28 * g])
         elif kind == "counter":
-            auto_sfx.append(["ping.mp3", at + float(item.get("run", 0.7)), 0.28])
+            auto_sfx.append(["ping.mp3", at + float(item.get("run", 0.7)), 0.28 * g])
+        auto_sfx = [x for x in auto_sfx if x[2] > 0]
         print(f"  вставка {kind:8s} {at:6.2f}с  {item.get('text') or item.get('items') or item.get('to')}")
     fc.append(f"[{vlabel}]fade=t=out:st={fade_at:.2f}:d=0.16[vout]")
 
@@ -422,8 +425,12 @@ def stage_finish(spec, out: Path):
         ms = int(float(at) * 1000)
         fc.append(f"[{idx}:a]volume={vol},adelay={ms}|{ms}[s{n}]")
         labels.append(f"[s{n}]")
-    fc.append(f"[0:a]{VOICE}[voice]")
-    fc.append(f"[voice]{''.join(labels)}amix=inputs={len(labels) + 1}:normalize=0:duration=first,"
+    # Эффекты сводятся в одну шину и приглушаются голосом (sidechain): пока
+    # человек говорит, звук не перекрывает слова, в паузах звучит в полную силу.
+    fc.append(f"[0:a]{VOICE},asplit=2[voice][vkey]")
+    fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[sfxbus]")
+    fc.append("[sfxbus][vkey]sidechaincompress=threshold=0.02:ratio=6:attack=8:release=250[sfxd]")
+    fc.append(f"[voice][sfxd]amix=inputs=2:normalize=0:duration=first,"
               f"loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=out:st={fade_at:.2f}:d=0.16[aout]")
 
     final = out / "final.mp4"
