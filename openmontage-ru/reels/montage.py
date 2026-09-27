@@ -140,6 +140,30 @@ def _moving_zoom(src, base_w, base_h, crop_y, z0, z1, dur):
             f"crop={OW}:{OH}:(iw-{OW})/2:(ih-{OH})*{crop_y}")
 
 
+def _keyed_zoom(src, base_w, base_h, crop_y, keys):
+    """Зум по ключевым точкам: [[t, z], [t, z, "punch"], ...].
+
+    t — секунды от начала куска, z — масштаб. Переход к точке по умолчанию
+    мягкий (косинус); с меткой "punch" — резкий удар: кубический выход,
+    почти весь путь проходится в первой трети отрезка. Так делается наезд
+    «в такт слову» — за 0.25-0.35с, а не растянутый на весь кусок дрейф,
+    который глаз почти не замечает.
+    """
+    keys = [(float(k[0]), float(k[1]), k[2] if len(k) > 2 else "smooth") for k in keys]
+    keys.sort()
+    expr = f"{keys[-1][1]:.4f}"
+    for (t0, z0, _), (t1, z1, kind) in reversed(list(zip(keys, keys[1:]))):
+        x = f"min(max((t-{t0:.3f})/{max(t1 - t0, 0.01):.3f},0),1)"
+        ease = f"(1-pow(1-{x},3))" if kind == "punch" else f"((1-cos(PI*{x}))/2)"
+        expr = f"if(lt(t,{t1:.3f}),{z0:.4f}+({z1 - z0:.4f})*{ease},{expr})"
+    expr = f"if(lt(t,{keys[0][0]:.3f}),{keys[0][1]:.4f},{expr})"
+    x0 = (src["w"] - base_w) // 2
+    y0 = (src["h"] - base_h) // 2
+    return (f"crop={base_w}:{base_h}:{x0}:{y0},fps=30,"
+            f"scale=w='trunc({OW}*({expr})/2)*2':h='trunc({OH}*({expr})/2)*2':eval=frame:flags=lanczos,"
+            f"crop={OW}:{OH}:(iw-{OW})/2:(ih-{OH})*{crop_y}")
+
+
 # ─────────────────────────────── этапы ────────────────────────────────
 
 def stage_assemble(spec, out: Path):
@@ -154,7 +178,9 @@ def stage_assemble(spec, out: Path):
         a, b, z = float(cut["a"]), float(cut["b"]), float(cut.get("zoom", 1.0))
         base_w = min(src["w"], int(src["h"] * 9 / 16))
         base_h = int(base_w * 16 / 9)
-        if "zoom_to" in cut:
+        if "keys" in cut:
+            vf = tone + _keyed_zoom(src, base_w, base_h, crop_y, cut["keys"])
+        elif "zoom_to" in cut:
             vf = tone + _moving_zoom(src, base_w, base_h, crop_y,
                                      float(cut.get("zoom_from", z)), float(cut["zoom_to"]), b - a)
         else:
@@ -169,8 +195,12 @@ def stage_assemble(spec, out: Path):
              str(p.with_suffix(".mov"))])
         parts.append(p.with_suffix(".mov"))
         total += b - a
-        zoom_txt = (f"{float(cut.get('zoom_from', z)):.2f}→{float(cut['zoom_to']):.2f}"
-                    if "zoom_to" in cut else f"{z:.2f}")
+        if "keys" in cut:
+            zoom_txt = "→".join(f"{k[1]:.2f}{'!' if len(k) > 2 else ''}" for k in cut["keys"])
+        elif "zoom_to" in cut:
+            zoom_txt = f"{float(cut.get('zoom_from', z)):.2f}→{float(cut['zoom_to']):.2f}"
+        else:
+            zoom_txt = f"{z:.2f}"
         print(f"  [{i}] {a:7.2f}–{b:7.2f}  зум {zoom_txt:9s} {cut.get('label', '')}")
     (out / "concat.txt").write_text("".join(f"file '{p.name}'\n" for p in parts))
     run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
@@ -200,6 +230,12 @@ def stage_words(spec, out: Path):
                          "words": [w for w in words if w["word"]]})
 
     fixes = spec.get("fixes", {})
+    # Отдельные слова, которые Whisper слышит неверно: «хранить» → «хоронить».
+    words_map = {k.lower(): v for k, v in fixes.get("words", {}).items()}
+    for s in segments:
+        for w in s["words"]:
+            if w["word"].lower() in words_map:
+                w["word"] = words_map[w["word"].lower()]
     # Пары токенов: «результат»+«-то», «со»+«зуба» → одно слово.
     pairs = {(a.lower(), b.lower()): c for a, b, c in fixes.get("pairs", [])}
     for s in segments:
