@@ -11,6 +11,10 @@
   check    рисуется галочка перед фразой             звук ping — для верного ответа
   list     пункты выскакивают по одному              звук click-soft на каждый
   counter  число бежит до значения                   звук ping в конце
+  stack    карточка-список слева, пункты выезжают     звук click-soft на каждый
+  stamp    красный штамп с ударом и дрожью             звук pop (громче)
+  cta      призыв в карточке со светящейся рамкой     звук ping
+  label    ярлык + заголовок над карточкой видео      без звука
 """
 
 from __future__ import annotations
@@ -228,8 +232,317 @@ def frames_counter(spec, W, H):
         yield fr
 
 
+# ── новый стиль (ролик 6): редакционные карточки ─────────────────────
+# Вдохновлено шортсами с «дорогим» монтажом: левое выравнивание, тёмное
+# матовое стекло, красные акценты, узкий Oswald для пунктов, Inter для
+# подписей, мягкая тень, движение «выезд + проявление» вместо «прыжка».
+FONTS = KIT / "fonts"
+
+
+def _ttf(name: str, size: int) -> ImageFont.FreeTypeFont:
+    ttf = Path("/tmp") / f"ins_{name}.ttf"
+    if not ttf.exists():
+        from fontTools.ttLib import TTFont
+        f = TTFont(str(FONTS / f"{name}.woff2")); f.flavor = None; f.save(str(ttf))
+    return ImageFont.truetype(str(ttf), size)
+
+
+_CMAPS: dict[str, set] = {}
+FALLBACK = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
+
+def _covered(font) -> set:
+    if font.path not in _CMAPS:
+        from fontTools.ttLib import TTFont
+        _CMAPS[font.path] = set(TTFont(font.path).getBestCmap())
+    return _CMAPS[font.path]
+
+
+def _glyph_font(font, ch):
+    """Урезанные woff2 из набора без знаков препинания — берём их из запасного шрифта."""
+    if ord(ch) in _covered(font) or not Path(FALLBACK).exists():
+        return font
+    return ImageFont.truetype(FALLBACK, int(font.size * 0.92))
+
+
+def _text(d, xy, text, font, fill, track=0.0):
+    """Текст с разрядкой (track — доля кегля) и запасным шрифтом для знаков."""
+    x, y = xy
+    if any(ord(ch) not in _covered(font) for ch in text):
+        x0 = x
+        for ch in text:
+            f = _glyph_font(font, ch)
+            d.text((x, y + (font.size - f.size) * 0.6), ch, font=f, fill=fill)
+            x += d.textlength(ch, font=f) + track * font.size
+        return x - x0
+    if not track:
+        d.text((x, y), text, font=font, fill=fill)
+        return d.textlength(text, font=font)
+    x0 = x
+    for ch in text:
+        d.text((x, y), ch, font=font, fill=fill)
+        x += d.textlength(ch, font=font) + track * font.size
+    return x - x0
+
+
+def _textw(text, font, track=0.0):
+    d = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    if any(ord(ch) not in _covered(font) for ch in text):
+        return sum(d.textlength(ch, font=_glyph_font(font, ch)) for ch in text) + track * font.size * max(len(text) - 1, 0)
+    return d.textlength(text, font=font) + (track * font.size * max(len(text) - 1, 0) if track else 0)
+
+
+def _shadow(w: int, h: int, r: int, blur: int = 26, alpha: int = 150) -> Image.Image:
+    from PIL import ImageFilter
+    pad = blur * 3
+    sh = Image.new("RGBA", (w + 2 * pad, h + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).rounded_rectangle([pad, pad + blur // 2, pad + w, pad + h + blur // 2], r,
+                                         fill=(0, 0, 0, alpha))
+    return sh.filter(ImageFilter.GaussianBlur(blur)), pad
+
+
+def dark_card(w: int, h: int, r: int, accent: bool = True) -> Image.Image:
+    """Тёмное матовое стекло: градиент сверху вниз, тонкая грань, красная полоса слева."""
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], r, fill=255)
+    col = Image.new("RGBA", (1, h))
+    for y in range(h):
+        t = y / max(h - 1, 1)
+        v = int(34 * (1 - t) + 14 * t)
+        col.putpixel((0, y), (v, v - 2, v + 4, int(205 * (1 - t) + 225 * t)))
+    card = Image.composite(col.resize((w, h)), Image.new("RGBA", (w, h), (0, 0, 0, 0)), mask)
+    d = ImageDraw.Draw(card)
+    d.rounded_rectangle([0, 0, w - 1, h - 1], r, outline=(255, 255, 255, 46), width=2 * SS)
+    d.line([(r, 1 * SS), (w - r, 1 * SS)], fill=(255, 255, 255, 70), width=1 * SS)   # блик по верхней грани
+    if accent:
+        d.rounded_rectangle([14 * SS, r, 14 * SS + 5 * SS, h - r], 3 * SS, fill=RED + (255,))
+    return card
+
+
+def _mark(kind: str, k: float, S: int) -> Image.Image:
+    """Значок пункта: x — красный крест в квадрате, check — зелёная галочка, num — номер."""
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    if kind == "check":
+        return _check_icon(k, S // SS)
+    if kind == "x":
+        d.rounded_rectangle([0, 0, S - 1, S - 1], 8 * SS, fill=RED + (int(255 * min(1, k * 2)),))
+        m = S * 0.3
+        L = k
+        if L > 0:
+            e = min(L * 2, 1)
+            d.line([(m, m), (m + (S - 2 * m) * e, m + (S - 2 * m) * e)], fill=(255, 255, 255, 255), width=int(5 * SS))
+        if L > 0.5:
+            e = (L - 0.5) * 2
+            d.line([(S - m, m), (S - m - (S - 2 * m) * e, m + (S - 2 * m) * e)], fill=(255, 255, 255, 255), width=int(5 * SS))
+        return img
+    d.rounded_rectangle([0, 0, S - 1, S - 1], 8 * SS, fill=RED + (255,))
+    return img
+
+
+def frames_stack(spec, W, H):
+    """Карточка-список: заголовок, пункты выезжают слева по одному.
+
+    spec: header, items, offsets, dur, mark ("x"|"check"|"num"), size.
+    Карточка растёт по высоте вместе с пунктами."""
+    items, offs, dur = spec["items"], spec["offsets"], spec["dur"]
+    mark = spec.get("mark", "num")
+    fi = _ttf("Oswald-700", spec.get("size", 62) * SS)
+    fh = _ttf("Inter-700", 25 * SS)
+    header = spec.get("header", "").upper()
+    pad, r = 40 * SS, 30 * SS
+    row = int(fi.size * 1.42)
+    icon = int(fi.size * 0.78)
+    head_h = (int(fh.size * 2.3) if header else 0)
+    text_w = max(_textw(t.upper(), fi) for t in items)
+    cw = int(max(pad * 2 + icon + 22 * SS + text_w, _textw(header, fh, 0.14) + pad * 2 + 30 * SS))
+    cw = min(cw, W - 40 * SS)
+    x0 = 20 * SS if spec.get("align", "left") == "left" else (W - cw) // 2
+    full_h = pad + head_h + row * len(items) + pad - int(row * 0.2)
+    shadow_cache = {}
+    for i in range(int(dur * FPS)):
+        t = i / FPS
+        shown = sum(1 for o in offs if t >= o)
+        target = pad + head_h + row * max(shown, 1) + pad - int(row * 0.2)
+        # высота догоняет цель плавно
+        prev = row * max(shown - 1, 1)
+        since = t - offs[max(shown - 1, 0)]
+        ch = int(pad + head_h + prev + (row * max(shown, 1) - prev) * ease_out(since / 0.28) + pad - int(row * 0.2))
+        ch = min(ch, full_h)
+        a_in = ease_out(t / 0.28)
+        a_out = 1 - ease_in((t - (dur - 0.25)) / 0.25)
+        alpha = min(a_in, a_out)
+        dx = int(-40 * SS * (1 - ease_out(t / 0.32)) - 60 * SS * ease_in((t - (dur - 0.25)) / 0.25))
+        fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        card = dark_card(cw, ch, r)
+        d = ImageDraw.Draw(card)
+        if header:
+            hx = pad + 14 * SS
+            _text(d, (hx, pad - 8 * SS), header, fh, RED + (255,), 0.14)
+        y = pad + head_h
+        for n, (txt, o) in enumerate(zip(items, offs)):
+            lt = t - o
+            if lt < 0:
+                continue
+            k = ease_out(lt / 0.34)
+            ix = pad + 14 * SS - int(26 * SS * (1 - k))
+            layer = Image.new("RGBA", card.size, (0, 0, 0, 0))
+            ld = ImageDraw.Draw(layer)
+            if mark == "num":
+                num = f"{n + 1:02d}"
+                _text(ld, (ix, y + (row - fi.size) // 2 - int(fi.size * 0.12)), num, fi, RED + (255,))
+                tx = ix + int(_textw("00", fi)) + 22 * SS
+            else:
+                ic = _mark(mark, ease_out((lt - 0.08) / 0.3), icon)
+                layer.alpha_composite(ic, (ix, y + (row - icon) // 2))
+                tx = ix + icon + 22 * SS
+            _text(ld, (tx, y + (row - fi.size) // 2 - int(fi.size * 0.12)), txt.upper(), fi, (255, 255, 255, 255))
+            if k < 1:
+                layer.putalpha(layer.getchannel("A").point(lambda v, k=k: int(v * k)))
+            card.alpha_composite(layer)
+            y += row
+        key = ch // (8 * SS)
+        if key not in shadow_cache:
+            shadow_cache[key] = _shadow(cw, ch, r)
+        sh, sp = shadow_cache[key]
+        group = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        group.alpha_composite(sh, (max(x0 - sp, 0), max(10 * SS - sp, 0)) if x0 - sp >= 0 else (0, 0))
+        group.alpha_composite(card, (x0, 10 * SS))
+        if alpha < 1:
+            group.putalpha(group.getchannel("A").point(lambda v, a=alpha: int(v * max(a, 0))))
+        fr.alpha_composite(group, (dx, 0)) if dx >= 0 else fr.alpha_composite(group.crop((-dx, 0, W, H)), (0, 0))
+        yield fr
+
+
+def frames_stamp(spec, W, H):
+    """Красный «штамп»: слово в рамке, повёрнуто, влетает с ударом и дрожью."""
+    from PIL import ImageFilter
+    text = spec["text"].upper()
+    f = _font(spec.get("size", 96) * SS)
+    tw = int(_textw(text, f)); th = int(f.size * 0.78)
+    padx, pady = 34 * SS, 24 * SS
+    w, h = tw + 2 * padx, th + 2 * pady
+    base = Image.new("RGBA", (w + 40 * SS, h + 40 * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(base)
+    ox, oy = 20 * SS, 20 * SS
+    d.rounded_rectangle([ox, oy, ox + w, oy + h], 14 * SS, outline=RED + (255,), width=8 * SS)
+    bb = d.textbbox((0, 0), text, font=f)
+    d.text((ox + padx - bb[0], oy + pady - bb[1] + (th - (bb[3] - bb[1])) // 2), text, font=f, fill=RED + (255,))
+    glow = base.filter(ImageFilter.GaussianBlur(10 * SS))
+    shadow = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    shadow.putalpha(base.getchannel("A").filter(ImageFilter.GaussianBlur(14 * SS)).point(lambda v: int(v * 0.8)))
+    stamp = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    stamp.alpha_composite(shadow); stamp.alpha_composite(glow); stamp.alpha_composite(base)
+    stamp = stamp.rotate(spec.get("angle", -6), resample=Image.BICUBIC, expand=True)
+    dur = spec["dur"]
+    for i in range(int(dur * FPS)):
+        t = i / FPS
+        if t < 0.16:
+            x = ease_in(t / 0.16); s = 1.9 - 0.9 * x; a = min(1, t / 0.08)
+        else:
+            s = 1.0 + 0.035 * (t - 0.16) / max(dur, 0.1); a = 1.0
+        if t > dur - 0.18:
+            x = ease_in((t - (dur - 0.18)) / 0.18); s *= 1 + 0.25 * x; a = 1 - x
+        sh = 0
+        if 0.16 <= t < 0.46:
+            sh = int(9 * SS * math.sin((t - 0.16) * 70) * (1 - (t - 0.16) / 0.3))
+        fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        tmp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        place(tmp, stamp, s, a)
+        fr.alpha_composite(tmp, (sh, 0)) if sh >= 0 else fr.alpha_composite(tmp.crop((-sh, 0, W, H)), (0, 0))
+        yield fr
+
+
+def frames_cta(spec, W, H):
+    """Призыв: тёмная карточка с красной светящейся рамкой, мягко «дышит»."""
+    from PIL import ImageFilter
+    big = spec["text"].upper()
+    sub = spec.get("sub", "")
+    fb = _font(spec.get("size", 64) * SS)
+    fs = _ttf("Inter-700", 27 * SS)
+    tag = spec.get("tag", "").upper()
+    ft = _ttf("Inter-700", 22 * SS)
+    bw = int(_textw(big, fb)); bh = int(fb.size * 0.8)
+    sw = int(_textw(sub, fs)) if sub else 0
+    w = max(bw, sw) + 2 * 56 * SS
+    h = bh + 2 * 44 * SS + (int(fs.size * 1.9) if sub else 0)
+    r = 26 * SS
+    card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(card).rounded_rectangle([0, 0, w - 1, h - 1], r, fill=(14, 10, 14, 228))
+    d = ImageDraw.Draw(card)
+    bb = d.textbbox((0, 0), big, font=fb)
+    d.text(((w - bw) // 2 - bb[0], 44 * SS - bb[1]), big, font=fb, fill=(255, 255, 255, 255))
+    if sub:
+        _text(d, ((w - sw) // 2, 44 * SS + bh + int(fs.size * 0.7)), sub, fs, (255, 255, 255, 170))
+    ring = Image.new("RGBA", (w + 80 * SS, h + 80 * SS), (0, 0, 0, 0))
+    ImageDraw.Draw(ring).rounded_rectangle([40 * SS, 40 * SS, 40 * SS + w - 1, 40 * SS + h - 1], r,
+                                           outline=RED + (255,), width=5 * SS)
+    glow = ring.filter(ImageFilter.GaussianBlur(16 * SS))
+    tagimg = None
+    if tag:
+        tw = int(_textw(tag, ft, 0.14)) + 36 * SS
+        tagimg = Image.new("RGBA", (tw, int(ft.size * 1.9)), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tagimg)
+        td.rounded_rectangle([0, 0, tw - 1, tagimg.height - 1], tagimg.height // 2, fill=RED + (255,))
+        _text(td, (18 * SS, int(ft.size * 0.42)), tag, ft, (255, 255, 255, 255), 0.14)
+    dur = spec["dur"]
+    for i in range(int(dur * FPS)):
+        t = i / FPS
+        s, a = pop_envelope(t, dur)
+        pulse = 0.65 + 0.35 * (0.5 + 0.5 * math.sin(t * 2 * math.pi / 1.3))
+        comp = Image.new("RGBA", ring.size, (0, 0, 0, 0))
+        g = glow.copy(); g.putalpha(g.getchannel("A").point(lambda v, p=pulse: int(min(255, v * 1.6 * p))))
+        comp.alpha_composite(g)
+        comp.alpha_composite(card, (40 * SS, 40 * SS))
+        comp.alpha_composite(ring)
+        if tagimg is not None:
+            comp.alpha_composite(tagimg, ((comp.width - tagimg.width) // 2, 40 * SS - tagimg.height // 2))
+        fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        place(fr, comp, s, a)
+        yield fr
+
+
+def frames_label(spec, W, H):
+    """Заголовок над карточкой видео: маленький красный ярлык + крупный текст слева."""
+    big = spec["text"].upper()
+    tag = spec.get("tag", "").upper()
+    fb = _font(spec.get("size", 60) * SS)
+    ft = _ttf("Inter-700", 24 * SS)
+    dur = spec["dur"]
+    for i in range(int(dur * FPS)):
+        t = i / FPS
+        fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(fr)
+        a_out = 1 - ease_in((t - (dur - 0.2)) / 0.2)
+        x0 = 60 * SS
+        y = 20 * SS
+        if tag:
+            k = ease_out(t / 0.3)
+            tw = int(_textw(tag, ft, 0.14)) + 34 * SS
+            th = int(ft.size * 1.9)
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ld = ImageDraw.Draw(layer)
+            ld.rounded_rectangle([x0, y, x0 + int(tw * k), y + th], th // 2, fill=RED + (int(255 * min(k, a_out)),))
+            if k > 0.6:
+                _text(ld, (x0 + 17 * SS, y + int(ft.size * 0.42)), tag, ft, (255, 255, 255, int(255 * min((k - 0.6) / 0.4, a_out))), 0.14)
+            fr.alpha_composite(layer)
+            y += th + 18 * SS
+        k = ease_out((t - 0.12) / 0.34)
+        if k > 0:
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ld = ImageDraw.Draw(layer)
+            bb = ld.textbbox((0, 0), big, font=fb)
+            yy = y + int(30 * SS * (1 - k))
+            ld.text((x0 + 3 * SS - bb[0], yy + 4 * SS - bb[1]), big, font=fb, fill=(0, 0, 0, 120))
+            ld.text((x0 - bb[0], yy - bb[1]), big, font=fb, fill=(255, 255, 255, 255))
+            layer.putalpha(layer.getchannel("A").point(lambda v, a=min(k, a_out): int(v * max(a, 0))))
+            fr.alpha_composite(layer)
+        yield fr
+
+
 RENDER = {"pop": frames_pop, "strike": frames_strike, "check": frames_check,
-          "list": frames_list, "counter": frames_counter}
+          "list": frames_list, "counter": frames_counter,
+          "stack": frames_stack, "stamp": frames_stamp, "cta": frames_cta, "label": frames_label}
 
 
 def render(spec: dict, out: Path, width: int = 1000, height: int = 360) -> Path:
@@ -237,6 +550,10 @@ def render(spec: dict, out: Path, width: int = 1000, height: int = 360) -> Path:
     W, H = width * SS, height * SS
     if spec["type"] == "list":
         H = max(H, 150 * SS * len(spec["items"]))
+    if spec["type"] == "stack":
+        H = max(H, (200 + 92 * len(spec["items"])) * SS)
+    if spec["type"] in ("stamp", "cta"):
+        H = max(H, 420 * SS)
     proc = subprocess.Popen(
         ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
          "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",

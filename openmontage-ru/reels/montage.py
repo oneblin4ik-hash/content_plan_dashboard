@@ -337,6 +337,63 @@ def _fit_title(lines, sizes, tracks):
     return fitted
 
 
+def _apply_cards(spec, out: Path) -> Path:
+    """«Видео в карточке»: на время указанного куска кадр уменьшается в
+    скруглённую карточку с тенью поверх размытой копии себя (приём из
+    референсов). Делается до субтитров, чтобы они остались обычного размера.
+
+    spec["cards"] = [{"cut": 2, "scale": 0.8, "y": 300}, ...]"""
+    cards = spec.get("cards", [])
+    src = out / "graded.mov"
+    if not cards:
+        return src
+    from PIL import Image, ImageDraw, ImageFilter
+    info = probe(src)
+    W, H = info["w"], info["h"]
+    starts, t = [], 0.0
+    for c in spec["cuts"]:
+        starts.append(t)
+        t += round((float(c["b"]) - float(c["a"])) * 30) / 30
+    inputs, fc, last = ["-i", str(src)], [], "0:v"
+    for n, card in enumerate(cards):
+        k = card["cut"]
+        a = starts[k]
+        b = a + round((float(spec["cuts"][k]["b"]) - float(spec["cuts"][k]["a"])) * 30) / 30
+        sc = float(card.get("scale", 0.8))
+        cw, ch = int(W * sc) // 2 * 2, int(H * sc) // 2 * 2
+        x, y = (W - cw) // 2, int(card.get("y", (H - ch) // 2))
+        r = int(card.get("radius", 46))
+        mask = Image.new("L", (cw, ch), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, cw - 1, ch - 1], r, fill=255)
+        mask.save(out / f"card_mask_{n}.png")
+        deco = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(deco).rounded_rectangle([x, y + 14, x + cw, y + ch + 14], r, fill=(0, 0, 0, 170))
+        deco = deco.filter(ImageFilter.GaussianBlur(26))
+        rim = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(rim).rounded_rectangle([x, y, x + cw - 1, y + ch - 1], r, outline=(255, 255, 255, 70), width=3)
+        deco.save(out / f"card_shadow_{n}.png"); rim.save(out / f"card_rim_{n}.png")
+        i0 = inputs.count("-i")
+        inputs += ["-loop", "1", "-i", str(out / f"card_mask_{n}.png"),
+                   "-loop", "1", "-i", str(out / f"card_shadow_{n}.png"),
+                   "-loop", "1", "-i", str(out / f"card_rim_{n}.png")]
+        fc.append(f"[{last}]split=3[base{n}][bgs{n}][fgs{n}]")
+        fc.append(f"[bgs{n}]scale={int(W * 1.18)}:-2,crop={W}:{H},gblur=sigma=38,"
+                  f"eq=brightness=-0.09:saturation=0.85[bg{n}]")
+        fc.append(f"[fgs{n}]scale={cw}:{ch}:flags=lanczos,format=rgba[fgr{n}]")
+        fc.append(f"[{i0}:v]format=gray,scale={cw}:{ch}[m{n}]")
+        fc.append(f"[fgr{n}][m{n}]alphamerge[fg{n}]")
+        fc.append(f"[bg{n}][{i0 + 1}:v]overlay=0:0:shortest=1[bgsh{n}]")
+        fc.append(f"[bgsh{n}][fg{n}]overlay={x}:{y}[cd{n}]")
+        fc.append(f"[cd{n}][{i0 + 2}:v]overlay=0:0:shortest=1[card{n}]")
+        fc.append(f"[base{n}][card{n}]overlay=0:0:enable='between(t,{a:.3f},{b - 0.001:.3f})'[v{n}]")
+        last = f"v{n}"
+        print(f"  карточка: кусок {k}, {a:.2f}–{b:.2f}с, масштаб {sc}")
+    dst = out / "carded.mov"
+    run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(fc),
+         "-map", f"[{last}]", "-map", "0:a", *MEZZ, "-c:a", "copy", "-t", f"{info['dur']:.3f}", str(dst)])
+    return dst
+
+
 def stage_render(spec, out: Path):
     sys.path.insert(0, str(ROOT))
     os.environ.setdefault("REMOTION_BROWSER_EXECUTABLE", "/opt/pw-browsers/chromium")
@@ -367,7 +424,7 @@ def stage_render(spec, out: Path):
         ],
     }
     res = RemotionCaptionBurn().execute({
-        "input_path": str(out / "graded.mov"),
+        "input_path": str(_apply_cards(spec, out)),
         "output_path": str(out / "captioned.mp4"),
         "segments": segments, "corrections": {}, "caption_style": style,
         "words_per_page": 1, "font_size": style["fontSize"], "highlight_color": "#FFFFFF",
@@ -444,8 +501,14 @@ def stage_finish(spec, out: Path):
         kind = item["type"]
         # sfx_gain — множитель громкости звуков этой вставки (0 — без звука).
         g = float(item.get("sfx_gain", 1.0))
-        if kind == "list":
+        if kind in ("list", "stack"):
             auto_sfx += [["pop.mp3", at + o, 0.40 * g] for o in item["offsets"]]
+        elif kind == "stamp":
+            auto_sfx.append(["impact-bass-1.mp3", at + 0.12, 0.55 * g])
+        elif kind == "label":
+            auto_sfx.append(["whoosh-short.mp3", at, 0.35 * g])
+        elif kind == "cta":
+            auto_sfx.append(["ping.mp3", at + 0.10, 0.30 * g])
         else:
             auto_sfx.append(["pop.mp3", at, 0.42 * g])
         if kind == "strike":
