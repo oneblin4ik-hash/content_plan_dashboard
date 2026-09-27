@@ -456,7 +456,7 @@ def stage_finish(spec, out: Path):
         print(f"  вставка {kind:8s} {at:6.2f}с  {item.get('text') or item.get('items') or item.get('to')}")
     fc.append(f"[{vlabel}]fade=t=out:st={fade_at:.2f}:d=0.16[vout]")
 
-    sfx = [["whoosh-short.mp3", 0.10, 0.60], ["impact-bass-1.mp3", 0.26, 0.60]]
+    sfx = [["whoosh-short.mp3", 0.10, 0.45], ["impact-bass-1.mp3", 0.26, 0.45]]
     sfx += spec.get("sfx", []) + auto_sfx
     kept = []
     for name, at, vol in sfx:
@@ -481,7 +481,7 @@ def stage_finish(spec, out: Path):
             gain = min(0.0, SFX_REF_DB - mean_db) + 20 * math.log10(max(vol, 1e-4))
             cap = min(SFX_MAX_LEN, length)
             ms = int(at * 1000)
-            g.append(f"[{base + n}:a]atrim=0:{cap:.2f},afade=t=out:st={max(cap - 0.3, 0):.2f}:d=0.3,"
+            g.append(f"[{base + n}:a]aresample=48000,atrim=0:{cap:.2f},afade=t=out:st={max(cap - 0.3, 0):.2f}:d=0.3,"
                      f"volume={gain:.1f}dB,adelay={ms}|{ms}[s{n}]")
             labels.append(f"[s{n}]")
         # Голос нормализуется отдельно, до смешивания, поэтому эффекты не
@@ -489,7 +489,9 @@ def stage_finish(spec, out: Path):
         # прижимаются голосом (sidechain): пока человек говорит, их почти нет.
         split = 3 if stems else 2
         outs = "[voice][vkey][vstem]" if stems else "[voice][vkey]"
-        g.append(f"[0:a]{VOICE},loudnorm=I=-14:TP=-2:LRA=11,asplit={split}{outs}")
+        # loudnorm отдаёт 192 кГц; без aresample шина эффектов считает длину
+        # не в тех отсчётах, и ролик обрезается на последнем эффекте.
+        g.append(f"[0:a]{VOICE},loudnorm=I=-14:TP=-2:LRA=11,aresample=48000,asplit={split}{outs}")
         # apad: шина эффектов короче голоса, а sidechain и amix обрезают всё
         # по самому короткому входу — без добивки тишиной ролик укорачивается.
         g.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0,"
@@ -529,6 +531,8 @@ def stage_finish(spec, out: Path):
         print(f"  crf {crf}: {size / 1048576:.1f} МиБ — больше лимита, пробую crf {crf + step}")
         crf += step
     info = probe(final)
+    if info["dur"] < dur - 0.25:
+        raise SystemExit(f"итог {info['dur']:.2f}с короче монтажа {dur:.2f}с — что-то обрезало звук")
     rate = size * 8 / info["dur"] / 1e6
     print(f"  {final}: {info['w']}x{info['h']}, {info['dur']:.2f}с, crf {crf}, "
           f"{size / 1048576:.1f} МиБ ({rate:.1f} Мбит/с)")
