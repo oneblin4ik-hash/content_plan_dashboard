@@ -356,16 +356,23 @@ def frames_stack(spec, W, H):
     Карточка растёт по высоте вместе с пунктами."""
     items, offs, dur = spec["items"], spec["offsets"], spec["dur"]
     mark = spec.get("mark", "num")
-    fi = _ttf("Oswald-700", spec.get("size", 62) * SS)
     fh = _ttf("Inter-700", 25 * SS)
     header = spec.get("header", "").upper()
     pad, r = 40 * SS, 30 * SS
+    # Кегль пунктов уменьшается, пока самый длинный пункт не влезет в карточку.
+    size = spec.get("size", 62)
+    while True:
+        fi = _ttf("Oswald-700", size * SS)
+        icon_w = 0 if mark == "none" else int(fi.size * 0.78) + 22 * SS
+        if pad * 2 + 14 * SS + icon_w + max(_textw(t.upper(), fi) for t in items) <= W - 60 * SS or size <= 40:
+            break
+        size -= 2
     row = int(fi.size * 1.42)
     icon = int(fi.size * 0.78)
     head_h = (int(fh.size * 2.3) if header else 0)
     text_w = max(_textw(t.upper(), fi) for t in items)
     lead = 0 if mark == "none" else icon + 22 * SS
-    cw = int(max(pad * 2 + lead + text_w, _textw(header, fh, 0.14) + pad * 2 + 30 * SS))
+    cw = int(max(pad * 2 + 14 * SS + lead + text_w, _textw(header, fh, 0.14) + pad * 2 + 30 * SS))
     cw = min(cw, W - 40 * SS)
     x0 = 20 * SS if spec.get("align", "left") == "left" else (W - cw) // 2
     full_h = pad + head_h + row * len(items) + pad - int(row * 0.2)
