@@ -364,7 +364,8 @@ def frames_stack(spec, W, H):
     icon = int(fi.size * 0.78)
     head_h = (int(fh.size * 2.3) if header else 0)
     text_w = max(_textw(t.upper(), fi) for t in items)
-    cw = int(max(pad * 2 + icon + 22 * SS + text_w, _textw(header, fh, 0.14) + pad * 2 + 30 * SS))
+    lead = 0 if mark == "none" else icon + 22 * SS
+    cw = int(max(pad * 2 + lead + text_w, _textw(header, fh, 0.14) + pad * 2 + 30 * SS))
     cw = min(cw, W - 40 * SS)
     x0 = 20 * SS if spec.get("align", "left") == "left" else (W - cw) // 2
     full_h = pad + head_h + row * len(items) + pad - int(row * 0.2)
@@ -397,7 +398,9 @@ def frames_stack(spec, W, H):
             ix = pad + 14 * SS - int(26 * SS * (1 - k))
             layer = Image.new("RGBA", card.size, (0, 0, 0, 0))
             ld = ImageDraw.Draw(layer)
-            if mark == "num":
+            if mark == "none":
+                tx = ix
+            elif mark == "num":
                 num = f"{n + 1:02d}"
                 _text(ld, (ix, y + (row - fi.size) // 2 - int(fi.size * 0.12)), num, fi, RED + (255,))
                 tx = ix + int(_textw("00", fi)) + 22 * SS
