@@ -462,7 +462,9 @@ def stage_finish(spec, out: Path):
 def stage_check(spec, out: Path):
     py = sys.executable
     ok = True
-    for cmd in ([py, str(HERE / "tail_check.py"), str(out / "final.mp4"), "--min-tail", "0.3"],
+    # Хвост проверяем по чистому голосу (rough.wav): в итоговом файле отзвук
+    # эффектов (удар, звоночек) принимается за речь и даёт ложное «обрезано».
+    for cmd in ([py, str(HERE / "tail_check.py"), str(out / "rough.wav"), "--min-tail", "0.3"],
                 [py, str(HERE / "caption_spec.py"), "check", str(out / "final.mp4"),
                  "--position", "0.679", "--cap", "82"]):
         r = subprocess.run(cmd, capture_output=True, text=True)
