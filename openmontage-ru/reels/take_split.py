@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -93,7 +94,13 @@ def main() -> int:
     print(f"{len(takes)} дублей в {duration:.1f}с\n", flush=True)
 
     from faster_whisper import WhisperModel
-    model = WhisperModel(args.model, device="cpu", compute_type="int8")
+    try:                                    # видеокарта, если есть (см. montage.set_gpu)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import montage
+        montage.set_gpu(os.environ.get("REELS_GPU", "auto"))
+        model = montage.whisper_model(args.model)
+    except ImportError:
+        model = WhisperModel(args.model, device="cpu", compute_type="int8")
 
     result = []
     for i, (s, e) in enumerate(takes):

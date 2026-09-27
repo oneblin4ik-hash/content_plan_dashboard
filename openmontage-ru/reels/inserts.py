@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -37,7 +38,7 @@ SOUND = {"pop": "pop.mp3", "strike": "error.mp3", "check": "ping.mp3",
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
-    ttf = Path("/tmp") / "rimma_insert.ttf"
+    ttf = Path(tempfile.gettempdir()) / "rimma_insert.ttf"
     if not ttf.exists():
         from fontTools.ttLib import TTFont
         f = TTFont(str(RIMMA)); f.flavor = None; f.save(str(ttf))
@@ -240,7 +241,7 @@ FONTS = KIT / "fonts"
 
 
 def _ttf(name: str, size: int) -> ImageFont.FreeTypeFont:
-    ttf = Path("/tmp") / f"ins_{name}.ttf"
+    ttf = Path(tempfile.gettempdir()) / f"ins_{name}.ttf"
     if not ttf.exists():
         from fontTools.ttLib import TTFont
         f = TTFont(str(FONTS / f"{name}.woff2")); f.flavor = None; f.save(str(ttf))
@@ -595,7 +596,7 @@ if __name__ == "__main__":
         {"type": "list", "items": ["БАЗА", "ИНТЕНСИВНОСТЬ", "ПРОГРЕССИЯ"], "offsets": [0, 0.35, 0.7], "dur": 2.2},
         {"type": "counter", "to": 30, "suffix": " МИН", "dur": 1.6},
     ]
-    outdir = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/inserts_demo")
+    outdir = Path(sys.argv[1] if len(sys.argv) > 1 else Path(tempfile.gettempdir()) / "inserts_demo")
     outdir.mkdir(parents=True, exist_ok=True)
     for d in demo:
         p = render(d, outdir / f"{d['type']}.mov")

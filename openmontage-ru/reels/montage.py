@@ -38,7 +38,17 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 KIT = HERE.parent                                   # openmontage-ru/
-ROOT = Path(os.environ.get("OPENMONTAGE_ROOT", "/home/user/calesthio/openmontage"))
+def _find_root() -> Path:
+    if os.environ.get("OPENMONTAGE_ROOT"):
+        return Path(os.environ["OPENMONTAGE_ROOT"])
+    for cand in (KIT.parent.parent / "OpenMontage", KIT.parent / "OpenMontage",
+                 Path("/home/user/calesthio/openmontage")):
+        if cand.exists():
+            return cand
+    return Path("/home/user/calesthio/openmontage")
+
+
+ROOT = _find_root()
 SFX_DIR = ROOT / ".agents/skills/hyperframes-media/assets/sfx"
 RIMMA = KIT / "fonts" / "RimmaSans-Bold.woff2"
 
@@ -56,6 +66,63 @@ FINAL = ["-c:v", "libx265", "-preset", "slow", "-crf", "16", "-tag:v", "hvc1",
          "-x265-params", "log-level=error", "-pix_fmt", "yuv420p",
          "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
          "-movflags", "+faststart"]
+
+# Режим видеокарты (NVIDIA, NVENC). Включается --gpu on или сам (auto), если
+# есть nvidia-smi и ffmpeg собран с hevc_nvenc. Качество: NVENC p7 + двойной
+# проход + адаптивное квантование; шкала -cq близка к crf у x265.
+MEZZ_GPU = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "constqp", "-qp", "12",
+            "-pix_fmt", "yuv420p"]
+FINAL_GPU = ["-c:v", "hevc_nvenc", "-preset", "p7", "-tune", "hq", "-rc", "vbr", "-cq", "16",
+             "-b:v", "0", "-multipass", "fullres", "-spatial-aq", "1", "-temporal-aq", "1",
+             "-rc-lookahead", "32", "-profile:v", "main", "-tag:v", "hvc1", "-pix_fmt", "yuv420p",
+             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+             "-movflags", "+faststart"]
+USE_GPU = False
+
+
+def _gpu_available() -> bool:
+    import shutil
+    if not shutil.which("nvidia-smi"):
+        return False
+    try:
+        enc = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+    except OSError:
+        return False
+    return "hevc_nvenc" in enc and "h264_nvenc" in enc
+
+
+def set_gpu(mode: str):
+    """Переключить кодирование на NVENC: MEZZ и FINAL подменяются на месте."""
+    global USE_GPU
+    USE_GPU = mode == "on" or (mode == "auto" and _gpu_available())
+    if USE_GPU:
+        MEZZ[:] = MEZZ_GPU
+        FINAL[:] = FINAL_GPU
+    print(f"видеокарта: {'NVENC + CUDA' if USE_GPU else 'нет, всё на процессоре'}")
+
+
+def whisper_model(name: str = "large-v3"):
+    """Whisper на CUDA (float16), если можно; иначе на процессоре (int8)."""
+    from faster_whisper import WhisperModel
+    if USE_GPU:
+        _cuda_dll_dirs()
+        try:
+            return WhisperModel(name, device="cuda", compute_type="float16")
+        except Exception as e:                          # нет CUDA-библиотек и т.п.
+            print(f"  ! Whisper на видеокарте не запустился ({e}) — считаю на процессоре")
+    return WhisperModel(name, device="cpu", compute_type="int8")
+
+
+def _cuda_dll_dirs():
+    """На Windows cuBLAS/cuDNN из pip-пакетов nvidia-* не видны сами — добавляем их bin."""
+    if os.name != "nt":
+        return
+    import site
+    for sp in site.getsitepackages():
+        for b in Path(sp).glob("nvidia/*/bin"):
+            os.add_dll_directory(str(b))
+            os.environ["PATH"] = str(b) + os.pathsep + os.environ.get("PATH", "")
+
 
 # Цветокор v5: форма из замера по блокам (фон/объект), ослаблена к прямой
 # на 0.70 по просьбе владельца канала, насыщенность 0.90, резкость 1.20.
@@ -263,8 +330,7 @@ def stage_grade(spec, out: Path):
 
 
 def stage_words(spec, out: Path):
-    from faster_whisper import WhisperModel
-    model = WhisperModel("large-v3", device="cpu", compute_type="int8")
+    model = whisper_model("large-v3")
     segs, _ = model.transcribe(str(out / "rough.wav"), language="ru", word_timestamps=True,
                                beam_size=5, condition_on_previous_text=False)
     segments = []
@@ -396,7 +462,8 @@ def _apply_cards(spec, out: Path) -> Path:
 
 def stage_render(spec, out: Path):
     sys.path.insert(0, str(ROOT))
-    os.environ.setdefault("REMOTION_BROWSER_EXECUTABLE", "/opt/pw-browsers/chromium")
+    if Path("/opt/pw-browsers/chromium").exists():    # облачный контейнер; дома Remotion ставит свой
+        os.environ.setdefault("REMOTION_BROWSER_EXECUTABLE", "/opt/pw-browsers/chromium")
     from fontTools.ttLib import TTFont
     from tools.video.remotion_caption_burn import RemotionCaptionBurn
 
@@ -591,11 +658,14 @@ def stage_finish(spec, out: Path):
     final = out / "final.mp4"
     # Готовый файл уходит в чат, а там лимит 30 МиБ. Берём лучшее качество,
     # которое в него влезает: начинаем с crf 16 и поднимаем, пока не влезет.
-    max_bytes = float(spec.get("max_mb", 29)) * 1024 * 1024
+    # max_mb 0 — без лимита (дома файл никуда не пересылается): один проход.
+    max_mb = float(spec.get("max_mb", 29))
+    max_bytes = max_mb * 1024 * 1024 if max_mb > 0 else float("inf")
     crf = int(spec.get("final_crf", 16))
+    qkey = "-cq" if "-cq" in FINAL else "-crf"
     while True:
         enc = list(FINAL)
-        enc[enc.index("-crf") + 1] = str(crf)
+        enc[enc.index(qkey) + 1] = str(crf)
         run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(fc),
              "-map", "[vout]", "-map", "[aout]", *enc, "-c:a", "aac", "-b:a", "256k",
              "-ar", "48000", "-shortest", str(final)])
@@ -635,8 +705,14 @@ def main() -> int:
     ap.add_argument("spec", type=Path)
     ap.add_argument("--from", dest="start", choices=STAGES, default="assemble")
     ap.add_argument("--only", choices=STAGES)
+    ap.add_argument("--gpu", choices=("auto", "on", "off"), default=os.environ.get("REELS_GPU", "auto"),
+                    help="NVENC + Whisper на CUDA (auto — если есть NVIDIA)")
+    ap.add_argument("--max-mb", type=float, help="лимит размера файла, 0 — без лимита")
     args = ap.parse_args()
+    set_gpu(args.gpu)
     spec = json.loads(args.spec.read_text(encoding="utf-8"))
+    if args.max_mb is not None:
+        spec["max_mb"] = args.max_mb
     base = args.spec.parent
     spec["source"] = str((base / spec["source"]).resolve())
     out = (base / spec.get("out", "out")).resolve()
