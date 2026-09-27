@@ -128,13 +128,15 @@ def _voice_margin(voice_wav: Path, sfx_wav: Path, win: float = 0.1):
     v, e = v[:k], e[:k]
     speech = (v > -35) & (e > -70)   # речь, поверх которой звучит эффект
     margin = v[speech] - e[speech]
-    bad = [i * win for i in np.where(speech)[0] if v[i] - e[i] < MIN_VOICE_MARGIN]
+    bad = [(i * win, MIN_VOICE_MARGIN - (v[i] - e[i])) for i in np.where(speech)[0]
+           if v[i] - e[i] < MIN_VOICE_MARGIN]
     worst = margin.min() if len(margin) else 99
     med = np.median(margin) if len(margin) else 99
     print(f"  голос над эффектами: худшее {worst:.1f} дБ (нужно ≥{MIN_VOICE_MARGIN}), "
           f"медиана {med:.1f} дБ")
     if bad:
-        print("  ! эффекты громче допустимого на: " + ", ".join(f"{t:.1f}с" for t in bad[:12]))
+        print("  ! эффекты громче допустимого на: " + ", ".join(f"{t:.1f}с" for t, _ in bad[:12]))
+    return bad
 
 
 def run(cmd, **kw):
@@ -504,11 +506,23 @@ def stage_finish(spec, out: Path):
 
     # Проверка «голос в приоритете»: отдельно пишем голос и эффекты и
     # смотрим, насколько эффекты тише голоса там, где идёт речь.
-    run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(audio_graph(True)),
-         "-map", "[vstem]", "-ac", "1", "-ar", "16000", str(out / "stem_voice.wav"),
-         "-map", "[sstem]", "-ac", "1", "-ar", "16000", str(out / "stem_sfx.wav"),
-         "-map", "[aout]", "-f", "null", "-"])
-    _voice_margin(out / "stem_voice.wav", out / "stem_sfx.wav")
+    # Если где-то эффект слишком громкий, он приглушается ровно на недостающие
+    # дБ (с запасом) и проверка повторяется: голос всегда главнее.
+    for attempt in range(4):
+        run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(audio_graph(True)),
+             "-map", "[vstem]", "-ac", "1", "-ar", "16000", str(out / "stem_voice.wav"),
+             "-map", "[sstem]", "-ac", "1", "-ar", "16000", str(out / "stem_sfx.wav"),
+             "-map", "[aout]", "-f", "null", "-"])
+        bad = _voice_margin(out / "stem_voice.wav", out / "stem_sfx.wav")
+        if not bad:
+            break
+        for n, (name, at, vol) in enumerate(kept):
+            end = at + min(SFX_MAX_LEN, _sfx_level(name)[1])
+            need = max((d for t, d in bad if at - 0.1 <= t <= end), default=0)
+            if need > 0:
+                vol *= 10 ** (-(need + 2) / 20)
+                kept[n] = (name, at, vol)
+                print(f"    приглушаю {name} на {at:.2f}с ещё на {need + 2:.1f} дБ")
     fc += audio_graph(False)
 
     final = out / "final.mp4"
