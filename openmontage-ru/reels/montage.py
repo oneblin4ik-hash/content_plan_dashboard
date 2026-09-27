@@ -126,12 +126,13 @@ def _voice_margin(voice_wav: Path, sfx_wav: Path, win: float = 0.1):
     v, e = rms_db(voice_wav), rms_db(sfx_wav)
     k = min(len(v), len(e))
     v, e = v[:k], e[:k]
-    speech = v > -35
+    speech = (v > -35) & (e > -70)   # речь, поверх которой звучит эффект
     margin = v[speech] - e[speech]
     bad = [i * win for i in np.where(speech)[0] if v[i] - e[i] < MIN_VOICE_MARGIN]
     worst = margin.min() if len(margin) else 99
+    med = np.median(margin) if len(margin) else 99
     print(f"  голос над эффектами: худшее {worst:.1f} дБ (нужно ≥{MIN_VOICE_MARGIN}), "
-          f"медиана {np.median(margin):.1f} дБ")
+          f"медиана {med:.1f} дБ")
     if bad:
         print("  ! эффекты громче допустимого на: " + ", ".join(f"{t:.1f}с" for t in bad[:12]))
 
@@ -455,7 +456,7 @@ def stage_finish(spec, out: Path):
         print(f"  вставка {kind:8s} {at:6.2f}с  {item.get('text') or item.get('items') or item.get('to')}")
     fc.append(f"[{vlabel}]fade=t=out:st={fade_at:.2f}:d=0.16[vout]")
 
-    sfx = [["whoosh-short.mp3", 0.10, 0.70], ["impact-bass-1.mp3", 0.26, 0.70]]
+    sfx = [["whoosh-short.mp3", 0.10, 0.60], ["impact-bass-1.mp3", 0.26, 0.60]]
     sfx += spec.get("sfx", []) + auto_sfx
     kept = []
     for name, at, vol in sfx:
@@ -489,7 +490,10 @@ def stage_finish(spec, out: Path):
         split = 3 if stems else 2
         outs = "[voice][vkey][vstem]" if stems else "[voice][vkey]"
         g.append(f"[0:a]{VOICE},loudnorm=I=-14:TP=-2:LRA=11,asplit={split}{outs}")
-        g.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[sfxbus]")
+        # apad: шина эффектов короче голоса, а sidechain и amix обрезают всё
+        # по самому короткому входу — без добивки тишиной ролик укорачивается.
+        g.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0,"
+                 f"apad=whole_dur={dur + 0.5:.2f}[sfxbus]")
         g.append("[sfxbus][vkey]sidechaincompress=threshold=0.01:ratio=12:attack=4:release=220"
                  + (",asplit=2[sfxd][sstem]" if stems else "[sfxd]"))
         g.append(f"[voice][sfxd]amix=inputs=2:normalize=0:duration=first,"
@@ -521,7 +525,6 @@ def stage_finish(spec, out: Path):
             break
         # Каждая ступень crf у x265 даёт примерно x0.84 к размеру — прыгаем
         # сразу на нужную, а не перебираем по одной: медленный пресет дорог.
-        import math
         step = max(1, math.ceil(math.log(size / max_bytes) / math.log(1 / 0.84)))
         print(f"  crf {crf}: {size / 1048576:.1f} МиБ — больше лимита, пробую crf {crf + step}")
         crf += step
