@@ -1,4 +1,4 @@
-# Установка монтажного конвейера Reels на Windows с видеокартой NVIDIA.
+﻿# Установка монтажного конвейера Reels на Windows с видеокартой NVIDIA.
 # Запуск (PowerShell):  powershell -ExecutionPolicy Bypass -File setup_windows.ps1
 # Всё ставится в %USERPROFILE%\Reels. Скрипт можно запускать повторно.
 
